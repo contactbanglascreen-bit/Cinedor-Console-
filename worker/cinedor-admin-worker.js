@@ -168,9 +168,9 @@ async function sendPush(body, env) {
   const images = (Array.isArray(body.images) ? body.images : String(body.images || "").split(","))
     .map((u) => String(u).trim())
     .filter((u) => /^https:\/\//i.test(u))
-    .slice(0, 3);
+    .slice(0, 10);
   // Data-only message: the Cinedor app draws the notification itself (poster on the right,
-  // or three posters in a row) and saves it in the 🔔 inbox.
+  // or three posters in a row that open into a grid of up to ten) and saves it in the 🔔 inbox.
   const message = {
     topic,
     data: { title, body: text, image, link, images: images.join(",") },

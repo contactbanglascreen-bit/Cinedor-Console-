@@ -682,10 +682,10 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin, c
 
     fun pick(p: PosterItem) {
         if (collection) {
-            // Collection: up to three posters in one notification
-            picks = if (picks.any { it.id == p.id }) picks.filterNot { it.id == p.id } else (picks + p).take(3)
+            // Collection: up to ten posters in one notification (3 in a row, 10 in a grid when opened)
+            picks = if (picks.any { it.id == p.id }) picks.filterNot { it.id == p.id } else (picks + p).take(10)
             if (title.isBlank() || title.startsWith("🎬") || title.startsWith("📺")) title = "🔥 Free Movie & Hot TV Series"
-            body = picks.joinToString(" · ") { it.title }
+            body = picks.take(3).joinToString(" · ") { it.title } + if (picks.size > 3) " +${picks.size - 3} more" else ""
             image = ""
             link = ""
             return
@@ -698,10 +698,10 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin, c
     }
 
     Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
-        SectionTitle("1 · Pick a poster", if (collection) "Tap up to 3 titles for one notification" else "Tap any title — the notification fills itself")
+        SectionTitle("1 · Pick a poster", if (collection) "Tap up to 10 titles — 3 show in a row, all 10 when opened" else "Tap any title — the notification fills itself")
         Row(Modifier.padding(horizontal = 16.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Chip("One title", !collection) { collection = false; picks = emptyList() }
-            Chip("Collection · 3 posters", collection) { collection = true; selected = null; picks = emptyList() }
+            Chip("Collection · up to 10", collection) { collection = true; selected = null; picks = emptyList() }
         }
         Box(Modifier.padding(horizontal = 16.dp)) {
             AdminField("Search movies & series", query, { query = it }, leading = Icons.Rounded.Search)
@@ -814,14 +814,29 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin, c
                 Text(body.ifBlank { "Message" }, color = Color(0xFF333333), fontSize = 13.5.sp)
                 if (collection && picks.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        picks.forEach { pk ->
-                            AsyncImage(
-                                model = pk.poster,
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.width(56.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(8.dp))
-                            )
+                    // Same look as the opened notification: rows of five, the tenth marked "More"
+                    picks.chunked(5).forEachIndexed { row, chunk ->
+                        if (row > 0) Spacer(Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            for (i in 0 until 5) {
+                                val pk = chunk.getOrNull(i)
+                                Box(Modifier.weight(1f).aspectRatio(2f / 3f)) {
+                                    if (pk != null) {
+                                        AsyncImage(
+                                            model = pk.poster,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
+                                        )
+                                        if (row == 1 && i == 4 && picks.size >= 10) {
+                                            Box(
+                                                Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)).background(Color(0x99000000)),
+                                                contentAlignment = Alignment.Center
+                                            ) { Text("More ›", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
