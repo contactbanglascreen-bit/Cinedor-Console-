@@ -20,6 +20,15 @@
 const JWKS_URL =
   "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com";
 
+// Built-in defaults, so the only thing to add in Cloudflare is the FCM_SERVICE_ACCOUNT secret.
+const DEFAULTS = {
+  ADMIN_UID: "xCbK5jp6PNf8UvTIE4mZYYLhpBj2",
+  FIREBASE_PROJECT_ID: "cinedor-60aac",
+  CONFIG_REPO: "contactbanglascreen-bit/Baizid-",
+  CONFIG_PATH: "console/app-config.json",
+  CONFIG_REFS: "main,ccr-c4b9015d-7d590g",
+};
+
 let jwksCache = { keys: null, until: 0 };
 let fcmTokenCache = { token: null, until: 0 };
 
@@ -217,7 +226,8 @@ async function saveConfig(text, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, rawEnv) {
+    const env = { ...DEFAULTS, ...rawEnv };
     const url = new URL(request.url);
     if (request.method === "OPTIONS") return new Response(null, { headers: cors(env) });
     if (url.pathname === "/health") return json(env, 200, { ok: true });
