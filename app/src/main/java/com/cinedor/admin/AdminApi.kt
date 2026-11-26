@@ -191,10 +191,11 @@ class WorkerApi(private val store: AdminStore, private val auth: AdminAuth) {
         return json
     }
 
-    suspend fun send(title: String, body: String, image: String, link: String, topic: String = "all"): String = withContext(Dispatchers.IO) {
+    suspend fun send(title: String, body: String, image: String, link: String, topic: String = "all", images: List<String> = emptyList()): String = withContext(Dispatchers.IO) {
         call(
             "/send", "POST",
             JSONObject().put("title", title).put("body", body).put("image", image).put("link", link).put("topic", topic)
+                .put("images", JSONArray(images))
         ).optString("id")
     }
 

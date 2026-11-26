@@ -1,4 +1,2 @@
-- Team: add moderators with their own login and choose what they can do
-- Ads: banners on Home and full-screen ads before videos, managed from Popups
-- Premium codes: make 7-day to 1-year codes, copy or share them
-- Featured popup now sends the full poster
+- Notify: new Collection mode — pick up to 3 posters for one notification
+- Single-title notifications send the portrait poster (shown on the right)

@@ -165,16 +165,16 @@ async function sendPush(body, env) {
   if (!title) throw new Error("Title is required");
   if (image && !/^https:\/\//i.test(image)) throw new Error("Poster link must start with https://");
 
-  const notification = { title, body: text };
-  if (image) notification.image = image;
+  const images = (Array.isArray(body.images) ? body.images : String(body.images || "").split(","))
+    .map((u) => String(u).trim())
+    .filter((u) => /^https:\/\//i.test(u))
+    .slice(0, 3);
+  // Data-only message: the Cinedor app draws the notification itself (poster on the right,
+  // or three posters in a row) and saves it in the 🔔 inbox.
   const message = {
     topic,
-    notification,
-    data: { title, body: text, image, link },
-    android: {
-      priority: "HIGH",
-      notification: { channel_id: "cinedor_news", color: "#E50914", ...(image ? { image } : {}) },
-    },
+    data: { title, body: text, image, link, images: images.join(",") },
+    android: { priority: "HIGH", ttl: "86400s" },
   };
   const token = await fcmAccessToken(env);
   const r = await fetch(
@@ -199,7 +199,7 @@ async function sendPush(body, env) {
             fields: {
               title: { stringValue: title },
               body: { stringValue: text },
-              image: { stringValue: image },
+              image: { stringValue: image || images[0] || "" },
               link: { stringValue: link },
               at: { timestampValue: new Date().toISOString() },
             },

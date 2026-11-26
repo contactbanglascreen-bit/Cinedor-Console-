@@ -650,6 +650,8 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin, c
     var query by remember { mutableStateOf("") }
     var feed by remember { mutableStateOf("trending") }
     var popupConfirm by remember { mutableStateOf(false) }
+    var collection by remember { mutableStateOf(false) }
+    var picks by remember { mutableStateOf<List<PosterItem>>(emptyList()) }
     var popupBusy by remember { mutableStateOf(false) }
     var posters by remember { mutableStateOf<List<PosterItem>>(emptyList()) }
     var loadingPosters by remember { mutableStateOf(true) }
@@ -679,6 +681,15 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin, c
     }
 
     fun pick(p: PosterItem) {
+        if (collection) {
+            // Collection: up to three posters in one notification
+            picks = if (picks.any { it.id == p.id }) picks.filterNot { it.id == p.id } else (picks + p).take(3)
+            if (title.isBlank() || title.startsWith("🎬") || title.startsWith("📺")) title = "🔥 Free Movie & Hot TV Series"
+            body = picks.joinToString(" · ") { it.title }
+            image = ""
+            link = ""
+            return
+        }
         selected = p
         title = (if (p.type == "Series") "📺 " else "🎬 ") + p.title + (if (p.year.isNotBlank()) " (${p.year})" else "")
         body = p.overview.take(140).let { if (p.overview.length > 140) it.trimEnd() + "…" else it }.ifBlank { "Now streaming on Cinedor. Tap to watch!" }
@@ -687,7 +698,11 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin, c
     }
 
     Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
-        SectionTitle("1 · Pick a poster", "Tap any title — the notification fills itself")
+        SectionTitle("1 · Pick a poster", if (collection) "Tap up to 3 titles for one notification" else "Tap any title — the notification fills itself")
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Chip("One title", !collection) { collection = false; picks = emptyList() }
+            Chip("Collection · 3 posters", collection) { collection = true; selected = null; picks = emptyList() }
+        }
         Box(Modifier.padding(horizontal = 16.dp)) {
             AdminField("Search movies & series", query, { query = it }, leading = Icons.Rounded.Search)
         }
@@ -710,7 +725,7 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin, c
             }
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(posters, key = { it.type + it.id }) { p ->
-                    val sel = selected?.id == p.id
+                    val sel = if (collection) picks.any { it.id == p.id } else selected?.id == p.id
                     Column(Modifier.width(116.dp).clickable { pick(p) }) {
                         Box {
                             AsyncImage(
@@ -797,7 +812,20 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin, c
                 Spacer(Modifier.height(6.dp))
                 Text(title.ifBlank { "Title" }, color = Color(0xFF1B1B1B), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
                 Text(body.ifBlank { "Message" }, color = Color(0xFF333333), fontSize = 13.5.sp)
-                if (image.startsWith("https://")) {
+                if (collection && picks.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        picks.forEach { pk ->
+                            AsyncImage(
+                                model = pk.poster,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.width(56.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(8.dp))
+                            )
+                        }
+                    }
+                }
+                if (!collection && image.startsWith("https://")) {
                     Spacer(Modifier.height(8.dp))
                     AsyncImage(
                         model = image,
@@ -931,7 +959,12 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin, c
                     confirm = false
                     busy = true
                     scope.launch {
-                        runCatching { api.send(title.trim(), body.trim(), image, link.trim()) }
+                        runCatching {
+                            api.send(
+                                title.trim(), body.trim(), if (collection) "" else (selected?.poster ?: image), link.trim(),
+                                images = if (collection) picks.map { it.poster } else emptyList()
+                            )
+                        }
                             .onSuccess {
                                 // The Worker saves a copy for the app's 🔔 inbox.
                                 val arr = runCatching { JSONArray(store.historyJson()) }.getOrDefault(JSONArray())
