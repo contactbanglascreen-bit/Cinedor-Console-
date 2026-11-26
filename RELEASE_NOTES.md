@@ -1,3 +1,1 @@
-- Notify now shows Cinedor's own titles (Trending in app, New in 24h, search)
-- Send any title as a Notification or as a Featured popup inside the app
-- Tapping opens that exact title's page in Cinedor
+- Bottom bar now shows every tab's name (Home, Notify, Feedback, Popups, System)

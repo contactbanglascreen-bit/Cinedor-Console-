@@ -280,25 +280,37 @@ private fun AdminBottomBar(current: AdminTab, onSelect: (AdminTab) -> Unit) {
         ) {
             AdminTab.entries.forEach { t ->
                 val sel = t == current
-                Row(
+                Column(
                     Modifier
+                        .weight(1f)
                         .clip(RoundedCornerShape(18.dp))
-                        .background(if (sel) AdminColors.redBrush else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)))
                         .clickable { onSelect(t) }
-                        .animateContentSize()
-                        .padding(horizontal = if (sel) 14.dp else 12.dp, vertical = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(vertical = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(
-                        if (sel) t.icon else t.outline,
-                        contentDescription = t.label,
-                        tint = if (sel) Color.White else AdminColors.Muted,
-                        modifier = Modifier.size(23.dp)
-                    )
-                    if (sel) {
-                        Spacer(Modifier.width(7.dp))
-                        Text(t.label, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(if (sel) AdminColors.redBrush else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)))
+                            .animateContentSize()
+                            .padding(horizontal = if (sel) 18.dp else 10.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            if (sel) t.icon else t.outline,
+                            contentDescription = t.label,
+                            tint = if (sel) Color.White else AdminColors.Muted,
+                            modifier = Modifier.size(22.dp)
+                        )
                     }
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        t.label,
+                        color = if (sel) Color.White else AdminColors.Muted,
+                        fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
+                        fontSize = 11.sp,
+                        maxLines = 1
+                    )
                 }
             }
         }
