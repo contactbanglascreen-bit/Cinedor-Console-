@@ -323,12 +323,7 @@ private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: 
             }
 
             // Floating "publish changes" bar whenever settings were edited
-            AnimatedVisibility(
-                visible = cs.dirty,
-                enter = slideInVertically { it } + fadeIn(),
-                exit = slideOutVertically { it } + fadeOut(),
-                modifier = Modifier.align(Alignment.BottomCenter)
-            ) {
+            SlideUp(visible = cs.dirty, modifier = Modifier.align(Alignment.BottomCenter)) {
                 Row(
                     Modifier
                         .padding(12.dp)
@@ -403,6 +398,17 @@ private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: 
             containerColor = AdminColors.Card
         )
     }
+}
+
+/** Slide-up animation called outside any Row/Column scope. */
+@Composable
+private fun SlideUp(visible: Boolean, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = slideInVertically { it } + fadeIn(),
+        exit = slideOutVertically { it } + fadeOut(),
+        modifier = modifier
+    ) { content() }
 }
 
 // =============================================================== dashboard
@@ -830,7 +836,7 @@ private fun PopupsScreen(cs: ConfigState) {
                         ToggleRow(if (enabled) "Showing to users" else "Hidden", null, enabled) {
                             enabled = it; obj.put("enabled", it); cs.changed()
                         }
-                        AnimatedVisibility(expanded) {
+                        if (expanded) {
                             Column {
                                 def.fields.forEach { f -> PopupField(obj, f) { cs.changed() } }
                             }
