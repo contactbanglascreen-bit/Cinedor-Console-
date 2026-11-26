@@ -826,8 +826,7 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin) {
                     scope.launch {
                         runCatching { api.send(title.trim(), body.trim(), image, link.trim()) }
                             .onSuccess {
-                                // Keep it in the app's 🔔 inbox too (needs the Firestore rules).
-                                runCatching { cloud.logNotification(title.trim(), body.trim(), image, link.trim()) }
+                                // The Worker saves a copy for the app's 🔔 inbox.
                                 val arr = runCatching { JSONArray(store.historyJson()) }.getOrDefault(JSONArray())
                                 val next = JSONArray().put(
                                     JSONObject().put("title", title).put("body", body).put("image", image).put("at", System.currentTimeMillis())

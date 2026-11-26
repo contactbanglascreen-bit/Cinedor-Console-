@@ -119,7 +119,7 @@ async function fcmAccessToken(env) {
   const header = strToB64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const payload = strToB64url(JSON.stringify({
     iss: sa.client_email,
-    scope: "https://www.googleapis.com/auth/firebase.messaging",
+    scope: "https://www.googleapis.com/auth/firebase.messaging https://www.googleapis.com/auth/datastore",
     aud: "https://oauth2.googleapis.com/token",
     iat: now,
     exp: now + 3600,
@@ -175,6 +175,27 @@ async function sendPush(body, env) {
   );
   const data = await r.json();
   if (!r.ok) throw new Error("FCM error: " + (data.error?.message || r.status));
+  // Keep a copy for the app's 🔔 inbox (only messages sent to everyone).
+  if (topic === "all") {
+    try {
+      await fetch(
+        `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/notifications`,
+        {
+          method: "POST",
+          headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fields: {
+              title: { stringValue: title },
+              body: { stringValue: text },
+              image: { stringValue: image },
+              link: { stringValue: link },
+              at: { timestampValue: new Date().toISOString() },
+            },
+          }),
+        }
+      );
+    } catch (_) {}
+  }
   return data.name;
 }
 
