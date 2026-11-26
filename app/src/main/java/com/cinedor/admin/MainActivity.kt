@@ -129,6 +129,7 @@ class MainActivity : ComponentActivity() {
         val api = WorkerApi(store, auth)
         val repo = ConfigRepo(store, api, auth)
         val cloud = CloudAdmin(auth)
+        val team = TeamAdmin(store, auth)
         setContent {
             MaterialTheme(
                 colorScheme = darkColorScheme(
@@ -147,7 +148,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     var loggedIn by remember { mutableStateOf(auth.isLoggedIn) }
                     if (loggedIn) {
-                        AdminHome(store, auth, api, repo, cloud, onLogout = { auth.logout(); loggedIn = false })
+                        AdminHome(store, auth, api, repo, cloud, team, onLogout = { auth.logout(); loggedIn = false })
                     } else {
                         LoginScreen(store, auth, onDone = { loggedIn = true })
                     }
@@ -261,7 +262,7 @@ private enum class AdminTab(val label: String, val icon: ImageVector, val outlin
 
 /** Floating glass bottom bar: the active tab grows into a red pill with a filled icon and its name. */
 @Composable
-private fun AdminBottomBar(current: AdminTab, onSelect: (AdminTab) -> Unit) {
+private fun AdminBottomBar(current: AdminTab, tabs: List<AdminTab>, onSelect: (AdminTab) -> Unit) {
     Box(
         Modifier
             .fillMaxWidth()
@@ -278,7 +279,7 @@ private fun AdminBottomBar(current: AdminTab, onSelect: (AdminTab) -> Unit) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AdminTab.entries.forEach { t ->
+            tabs.forEach { t ->
                 val sel = t == current
                 Column(
                     Modifier
@@ -339,7 +340,7 @@ private class ConfigState {
 }
 
 @Composable
-private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: ConfigRepo, cloud: CloudAdmin, onLogout: () -> Unit) {
+private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: ConfigRepo, cloud: CloudAdmin, team: TeamAdmin, onLogout: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var tab by remember { mutableStateOf(AdminTab.DASHBOARD) }
@@ -372,7 +373,7 @@ private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: 
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(tab.label, color = AdminColors.Text, fontWeight = FontWeight.Black, fontSize = 19.sp)
-                Text("Cinedor Admin", color = AdminColors.Muted, fontSize = 11.5.sp)
+                Text(if (store.isAdmin) "Cinedor Admin" else "Moderator · " + store.displayName.ifBlank { store.email }, color = AdminColors.Muted, fontSize = 11.5.sp)
             }
             IconButton(onClick = { load() }) { Icon(Icons.Rounded.Refresh, contentDescription = "Reload", tint = AdminColors.Muted) }
             IconButton(onClick = { confirmLogout = true }) { Icon(Icons.Rounded.Logout, contentDescription = "Log out", tint = AdminColors.Muted) }
@@ -383,8 +384,8 @@ private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: 
                 AdminTab.DASHBOARD -> DashboardScreen(store, api, cs, cloud, onGo = { tab = it })
                 AdminTab.FEEDBACK -> FeedbackScreen(cloud, store, api)
                 AdminTab.NOTIFY -> NotifyScreen(store, api, cloud, cs, repo)
-                AdminTab.POPUPS -> PopupsScreen(cs)
-                AdminTab.SYSTEM -> SystemScreen(store, api, cs, onLogout = { confirmLogout = true })
+                AdminTab.POPUPS -> PopupsScreen(cs, store, team)
+                AdminTab.SYSTEM -> SystemScreen(store, api, cs, team, onLogout = { confirmLogout = true })
             }
 
             // Floating "publish changes" bar whenever settings were edited
@@ -410,7 +411,16 @@ private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: 
             }
         }
 
-        AdminBottomBar(tab) { tab = it }
+        val tabs = AdminTab.entries.filter {
+            when (it) {
+                AdminTab.DASHBOARD -> true
+                AdminTab.NOTIFY -> store.can("notify")
+                AdminTab.FEEDBACK -> store.can("feedback")
+                AdminTab.POPUPS -> store.can("popups") || store.can("ads") || store.can("premium")
+                AdminTab.SYSTEM -> store.isAdmin
+            }
+        }
+        AdminBottomBar(tab, tabs) { tab = it }
     }
 
     if (confirmPublish) {
@@ -525,7 +535,7 @@ private fun DashboardScreen(store: AdminStore, api: WorkerApi, cs: ConfigState, 
         }
 
         // Users: countries & phones
-        UsersSection(cloud)
+        if (store.can("users")) UsersSection(cloud)
 
         // Quick actions
         SectionTitle("Quick actions")
@@ -538,7 +548,16 @@ private fun DashboardScreen(store: AdminStore, api: WorkerApi, cs: ConfigState, 
             Triple(Icons.Rounded.Build, "Maintenance", AdminTab.SYSTEM),
             Triple(Icons.Rounded.SystemUpdate, "Force update", AdminTab.SYSTEM),
             Triple(Icons.Rounded.Settings, "Settings", AdminTab.SYSTEM)
-        )
+        ).filter { (_, label, target) ->
+            when (target) {
+                AdminTab.NOTIFY -> store.can("notify")
+                AdminTab.FEEDBACK -> store.can("feedback")
+                AdminTab.POPUPS -> if (label == "Premium") store.can("premium") || store.can("popups") else store.can("popups")
+                AdminTab.SYSTEM -> store.isAdmin
+                AdminTab.DASHBOARD -> true
+            }
+        }
+        if (actions.isEmpty()) SectionTitle("", "")
         actions.chunked(3).forEach { row ->
             Row(Modifier.padding(horizontal = 16.dp, vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 row.forEach { (icon, label, target) ->
@@ -844,7 +863,8 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin, c
                     sp.put("id", "spot-" + System.currentTimeMillis())
                     sp.put("title", title.trim())
                     sp.put("message", body.trim())
-                    sp.put("image", selected?.backdrop ?: image)
+                    sp.put("image", selected?.poster ?: image)
+                    sp.put("backdrop", selected?.backdrop ?: image)
                     sp.put("buttonText", "Watch now")
                     sp.put("buttonUrl", link.trim())
                     sp.put("showEveryHours", 24)
@@ -975,7 +995,7 @@ private val POPUPS = listOf(
 )
 
 @Composable
-private fun PopupsScreen(cs: ConfigState) {
+private fun PopupsScreen(cs: ConfigState, store: AdminStore, team: TeamAdmin) {
     var open by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(bottom = 100.dp)) {
         SectionTitle("Popups & features", if (cs.ref == "new") "First time: turn on what you want and tap Publish" else "Turn on, edit, then Publish")
@@ -988,7 +1008,9 @@ private fun PopupsScreen(cs: ConfigState) {
                 Text(cs.error, color = AdminColors.Muted, fontSize = 13.sp)
             }
             else -> androidx.compose.runtime.key(cs.tick) {
-                POPUPS.forEach { def ->
+                if (store.can("ads")) AdsEditor(cs.section("ads")) { cs.changed() }
+                if (store.can("premium")) PremiumCodesSection(team)
+                if (store.can("popups")) POPUPS.forEach { def ->
                     val obj = cs.section(def.key)
                     var enabled by remember { mutableStateOf(obj.optBoolean("enabled", def.key == "audioDubs")) }
                     val expanded = open == def.key
@@ -1058,7 +1080,7 @@ private fun PopupField(obj: JSONObject, f: PField, onChanged: () -> Unit) {
 // =============================================================== system
 
 @Composable
-private fun SystemScreen(store: AdminStore, api: WorkerApi, cs: ConfigState, onLogout: () -> Unit) {
+private fun SystemScreen(store: AdminStore, api: WorkerApi, cs: ConfigState, team: TeamAdmin, onLogout: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(bottom = 100.dp)) {
@@ -1129,6 +1151,8 @@ private fun SystemScreen(store: AdminStore, api: WorkerApi, cs: ConfigState, onL
             }
             }
         }
+
+        if (store.isAdmin) TeamSection(team)
 
         SectionTitle("Account")
         GlassCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {

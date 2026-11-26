@@ -102,12 +102,24 @@ async function verifyIdToken(token, env) {
   return claims;
 }
 
-async function requireAdmin(request, env) {
+async function requireAdmin(request, env, perm = "notify") {
   const auth = request.headers.get("Authorization") || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   const claims = await verifyIdToken(token, env);
-  if (claims.sub !== env.ADMIN_UID) throw new Error("This account is not the Cinedor admin");
-  return claims;
+  if (claims.sub === env.ADMIN_UID) return claims;
+  // Moderators: staff/{uid} must be active and have the permission
+  const access = await fcmAccessToken(env);
+  const r = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/staff/${claims.sub}`,
+    { headers: { Authorization: "Bearer " + access } }
+  );
+  if (r.ok) {
+    const f = (await r.json()).fields || {};
+    const active = f.active?.booleanValue === true;
+    const perms = (f.perms?.arrayValue?.values || []).map((v) => v.stringValue);
+    if (active && perms.includes(perm)) return claims;
+  }
+  throw new Error("This account is not allowed to do this (admin)");
 }
 
 /** OAuth access token for FCM, signed with the service-account private key. */
@@ -253,7 +265,7 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { headers: cors(env) });
     if (url.pathname === "/health") return json(env, 200, { ok: true });
     try {
-      await requireAdmin(request, env);
+      await requireAdmin(request, env, url.pathname === "/send" ? "notify" : "popups");
       if (url.pathname === "/send" && request.method === "POST") {
         const id = await sendPush(await request.json(), env);
         return json(env, 200, { ok: true, id });

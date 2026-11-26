@@ -45,6 +45,19 @@ class AdminStore(context: Context) {
         get() = prefs.getString("gh_token", "").orEmpty()
         set(v) = prefs.edit().putString("gh_token", v.trim()).apply()
 
+    /** "admin" or "moderator", and what a moderator may do. */
+    var role: String
+        get() = prefs.getString("role", "admin").orEmpty()
+        set(v) = prefs.edit().putString("role", v).apply()
+    var perms: Set<String>
+        get() = prefs.getStringSet("perms", emptySet()).orEmpty()
+        set(v) = prefs.edit().putStringSet("perms", v).apply()
+    var displayName: String
+        get() = prefs.getString("display_name", "").orEmpty()
+        set(v) = prefs.edit().putString("display_name", v).apply()
+    val isAdmin: Boolean get() = role == "admin"
+    fun can(perm: String): Boolean = isAdmin || perm in perms
+
     fun historyJson(): String = prefs.getString("history", "[]").orEmpty()
     fun saveHistory(json: String) = prefs.edit().putString("history", json).apply()
 }
@@ -96,11 +109,34 @@ class AdminAuth(private val store: AdminStore) {
         if (r.code !in 200..299) {
             throw AdminException(friendlyError(json.optJSONObject("error")?.optString("message").orEmpty()))
         }
-        if (json.optString("localId") != ADMIN_UID) throw AdminException("This account is not the Cinedor admin.")
+        val uid = json.optString("localId")
         idToken = json.optString("idToken")
         expiresAt = System.currentTimeMillis() + (json.optString("expiresIn").toLongOrNull() ?: 3600L) * 1000L - 60_000L
+        loadRole(uid)
         store.refreshToken = json.optString("refreshToken")
         store.email = json.optString("email")
+    }
+
+    /** The owner is admin; anyone else must be an active moderator in staff/{uid}. */
+    private fun loadRole(uid: String) {
+        if (uid == ADMIN_UID) {
+            store.role = "admin"; store.perms = emptySet(); return
+        }
+        val r = http(
+            "https://firestore.googleapis.com/v1/projects/cinedor-60aac/databases/(default)/documents/staff/$uid",
+            headers = mapOf("Authorization" to "Bearer " + (idToken ?: ""))
+        )
+        val f = if (r.code in 200..299) JSONObject(r.body).optJSONObject("fields") else null
+        val active = f?.optJSONObject("active")?.optBoolean("booleanValue") == true
+        if (f == null || !active) {
+            idToken = null
+            throw AdminException("This account doesn't have access to Cinedor Admin.")
+        }
+        val arr = f.optJSONObject("perms")?.optJSONObject("arrayValue")?.optJSONArray("values")
+        val perms = if (arr == null) emptySet() else (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("stringValue") }.toSet()
+        store.role = "moderator"
+        store.perms = perms
+        store.displayName = f.optJSONObject("name")?.optString("stringValue").orEmpty()
     }
 
     private fun refresh() {
@@ -113,10 +149,10 @@ class AdminAuth(private val store: AdminStore) {
         )
         val json = runCatching { JSONObject(r.body) }.getOrDefault(JSONObject())
         if (r.code !in 200..299) throw AdminException("Session expired. Please log in again.")
-        if (json.optString("user_id") != ADMIN_UID) throw AdminException("This account is not the Cinedor admin.")
         idToken = json.optString("id_token")
         expiresAt = System.currentTimeMillis() + (json.optString("expires_in").toLongOrNull() ?: 3600L) * 1000L - 60_000L
         store.refreshToken = json.optString("refresh_token")
+        loadRole(json.optString("user_id"))
     }
 
     fun token(): String {
@@ -581,4 +617,133 @@ object CinedorCatalog {
     suspend fun search(q: String): List<PosterItem> = withContext(Dispatchers.IO) {
         if (q.isBlank()) emptyList() else get("/api/v1/search?q=" + URLEncoder.encode(q, "UTF-8") + "&source=all")
     }
+}
+
+
+// ------------------------------------------------------------------ team (moderators) & premium codes
+
+data class StaffMember(val uid: String, val name: String, val email: String, val perms: Set<String>, val active: Boolean)
+data class PremiumCode(val code: String, val days: Int, val used: Boolean, val usedBy: String, val note: String, val createdAt: String)
+
+/** What a moderator can be allowed to do. */
+val STAFF_PERMS = listOf(
+    "notify" to "Send notifications",
+    "popups" to "Edit popups & features",
+    "ads" to "Manage ads",
+    "feedback" to "Answer feedback",
+    "users" to "See users & countries",
+    "premium" to "Make Premium codes"
+)
+
+class TeamAdmin(private val store: AdminStore, private val auth: AdminAuth) {
+    private val docs = "https://firestore.googleapis.com/v1/projects/cinedor-60aac/databases/(default)/documents"
+    private fun bearer() = mapOf("Authorization" to "Bearer " + auth.token())
+    private fun s(v: String) = JSONObject().put("stringValue", v)
+
+    private fun ok(r: HttpResult) {
+        if (r.code in 200..299) return
+        val msg = runCatching { JSONObject(r.body).optJSONObject("error")?.optString("message") }.getOrNull().orEmpty()
+        throw AdminException(if (r.code == 403) "Firebase blocked this. Publish the latest Cinedor rules." else msg.ifBlank { "Error ${r.code}" })
+    }
+
+    suspend fun staff(): List<StaffMember> = withContext(Dispatchers.IO) {
+        val r = http("$docs/staff?pageSize=100", headers = bearer())
+        if (r.code == 404) return@withContext emptyList()
+        ok(r)
+        val arr = JSONObject(r.body).optJSONArray("documents") ?: return@withContext emptyList()
+        (0 until arr.length()).mapNotNull { i ->
+            val d = arr.optJSONObject(i) ?: return@mapNotNull null
+            val f = d.optJSONObject("fields")
+            val pa = f?.optJSONObject("perms")?.optJSONObject("arrayValue")?.optJSONArray("values")
+            StaffMember(
+                uid = d.optString("name").substringAfterLast('/'),
+                name = f?.optJSONObject("name")?.optString("stringValue").orEmpty(),
+                email = f?.optJSONObject("email")?.optString("stringValue").orEmpty(),
+                perms = if (pa == null) emptySet() else (0 until pa.length()).mapNotNull { pa.optJSONObject(it)?.optString("stringValue") }.toSet(),
+                active = f?.optJSONObject("active")?.optBoolean("booleanValue") == true
+            )
+        }
+    }
+
+    private fun saveStaff(m: StaffMember) {
+        val perms = JSONArray(); m.perms.forEach { perms.put(s(it)) }
+        val fields = JSONObject()
+            .put("name", s(m.name)).put("email", s(m.email))
+            .put("perms", JSONObject().put("arrayValue", JSONObject().put("values", perms)))
+            .put("active", JSONObject().put("booleanValue", m.active))
+        ok(http("$docs/staff/${m.uid}", "POST", JSONObject().put("fields", fields).toString(),
+            headers = bearer() + ("X-HTTP-Method-Override" to "PATCH")))
+    }
+
+    suspend fun update(m: StaffMember) = withContext(Dispatchers.IO) { saveStaff(m) }
+
+    /** Creates the moderator's login (email + password) and gives access. */
+    suspend fun addModerator(name: String, email: String, password: String, perms: Set<String>): StaffMember = withContext(Dispatchers.IO) {
+        if (password.length < 6) throw AdminException("Password must be at least 6 characters")
+        val r = http(
+            "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${store.apiKey}", "POST",
+            JSONObject().put("email", email.trim()).put("password", password).put("returnSecureToken", true).toString()
+        )
+        val j = runCatching { JSONObject(r.body) }.getOrDefault(JSONObject())
+        val uid = if (r.code in 200..299) j.optString("localId") else {
+            val code = j.optJSONObject("error")?.optString("message").orEmpty()
+            throw AdminException(if ("EMAIL_EXISTS" in code) "This email already has an account. Ask them for their UID or use another email." else code.ifBlank { "Couldn't create the account" })
+        }
+        val m = StaffMember(uid, name.trim(), email.trim(), perms, true)
+        saveStaff(m)
+        m
+    }
+
+    suspend fun remove(uid: String) = withContext(Dispatchers.IO) { ok(http("$docs/staff/$uid", "DELETE", headers = bearer())) }
+
+    // ---- premium codes
+    private fun newCode(): String {
+        val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        val rnd = java.security.SecureRandom()
+        fun part() = (1..4).map { chars[rnd.nextInt(chars.length)] }.joinToString("")
+        return "CINE-${part()}-${part()}"
+    }
+
+    suspend fun makeCodes(days: Int, count: Int, note: String): List<String> = withContext(Dispatchers.IO) {
+        val now = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+            .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date())
+        (1..count.coerceIn(1, 20)).map {
+            val code = newCode()
+            val fields = JSONObject()
+                .put("days", JSONObject().put("integerValue", days.toString()))
+                .put("used", JSONObject().put("booleanValue", false))
+                .put("usedBy", s(""))
+                .put("note", s(note))
+                .put("createdBy", s(store.email))
+                .put("createdAt", JSONObject().put("timestampValue", now))
+            ok(http("$docs/codes?documentId=$code", "POST", JSONObject().put("fields", fields).toString(), headers = bearer()))
+            code
+        }
+    }
+
+    suspend fun codes(): List<PremiumCode> = withContext(Dispatchers.IO) {
+        val q = JSONObject().put(
+            "structuredQuery", JSONObject()
+                .put("from", JSONArray().put(JSONObject().put("collectionId", "codes")))
+                .put("orderBy", JSONArray().put(JSONObject().put("field", JSONObject().put("fieldPath", "createdAt")).put("direction", "DESCENDING")))
+                .put("limit", 60)
+        )
+        val r = http("$docs:runQuery", "POST", q.toString(), headers = bearer())
+        ok(r)
+        val arr = JSONArray(r.body)
+        (0 until arr.length()).mapNotNull { i ->
+            val d = arr.optJSONObject(i)?.optJSONObject("document") ?: return@mapNotNull null
+            val f = d.optJSONObject("fields")
+            PremiumCode(
+                code = d.optString("name").substringAfterLast('/'),
+                days = f?.optJSONObject("days")?.optString("integerValue")?.toIntOrNull() ?: 0,
+                used = f?.optJSONObject("used")?.optBoolean("booleanValue") == true,
+                usedBy = f?.optJSONObject("usedBy")?.optString("stringValue").orEmpty(),
+                note = f?.optJSONObject("note")?.optString("stringValue").orEmpty(),
+                createdAt = f?.optJSONObject("createdAt")?.optString("timestampValue").orEmpty()
+            )
+        }
+    }
+
+    suspend fun deleteCode(code: String) = withContext(Dispatchers.IO) { ok(http("$docs/codes/$code", "DELETE", headers = bearer())) }
 }

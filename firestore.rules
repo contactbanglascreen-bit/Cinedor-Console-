@@ -1,8 +1,6 @@
 rules_version = '2';
 
 // Cinedor Firestore rules
-// - devices/{uid}: each phone writes only its own stats; only the admin can read them
-// - feedback/{id}: phones create their own feedback and read only their own; the admin reads all and marks them fixed
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -10,12 +8,30 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == 'xCbK5jp6PNf8UvTIE4mZYYLhpBj2';
     }
 
+    // Moderators: staff/{uid} with active == true and a list of permissions
+    function staffDoc() {
+      return get(/databases/$(database)/documents/staff/$(request.auth.uid)).data;
+    }
+    function hasPerm(p) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/staff/$(request.auth.uid))
+        && staffDoc().active == true
+        && p in staffDoc().perms;
+    }
+
+    match /staff/{uid} {
+      allow read: if isAdmin() || (request.auth != null && request.auth.uid == uid);
+      allow write: if isAdmin();
+    }
+
+    // Phone stats (country, model)
     match /devices/{uid} {
-      allow read: if isAdmin();
+      allow read: if isAdmin() || hasPerm('users');
       allow create, update: if request.auth != null && request.auth.uid == uid;
       allow delete: if isAdmin();
     }
 
+    // Feedback
     match /feedback/{id} {
       allow create: if request.auth != null
         && request.resource.data.uid == request.auth.uid
@@ -23,20 +39,44 @@ service cloud.firestore {
         && request.resource.data.message is string
         && request.resource.data.message.size() > 0
         && request.resource.data.message.size() <= 2000;
-      allow read: if isAdmin() || (request.auth != null && resource.data.uid == request.auth.uid);
-      allow update, delete: if isAdmin();
+      allow read: if isAdmin() || hasPerm('feedback') || (request.auth != null && resource.data.uid == request.auth.uid);
+      allow update, delete: if isAdmin() || hasPerm('feedback');
     }
 
-    // Notifications the admin sent: every signed-in phone can read them for its 🔔 inbox
+    // Notifications list for the 🔔 inbox
     match /notifications/{id} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdmin() || hasPerm('notify');
     }
 
-    // App settings (popups, maintenance, force update): everyone reads, only admin writes
+    // App settings: popups, ads, maintenance, force update
     match /config/{id} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdmin() || hasPerm('popups') || hasPerm('ads');
+    }
+
+    // Premium codes: anyone signed in may look up a code by its exact name and use it once
+    match /codes/{code} {
+      allow get: if request.auth != null;
+      allow list, create, delete: if isAdmin() || hasPerm('premium');
+      allow update: if isAdmin() || hasPerm('premium')
+        || (request.auth != null
+            && resource.data.used == false
+            && request.resource.data.used == true
+            && request.resource.data.usedBy == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedBy', 'usedAt']));
+    }
+
+    // Premium status per phone: only created together with using an unused code
+    match /premium/{uid} {
+      allow read: if (request.auth != null && request.auth.uid == uid) || isAdmin() || hasPerm('premium');
+      allow create, update: if isAdmin() || hasPerm('premium')
+        || (request.auth != null && request.auth.uid == uid
+            && get(/databases/$(database)/documents/codes/$(request.resource.data.code)).data.used == false
+            && getAfter(/databases/$(database)/documents/codes/$(request.resource.data.code)).data.usedBy == uid
+            && request.resource.data.days == get(/databases/$(database)/documents/codes/$(request.resource.data.code)).data.days
+            && request.resource.data.start == request.time);
+      allow delete: if isAdmin() || hasPerm('premium');
     }
 
     // Everything else is closed
