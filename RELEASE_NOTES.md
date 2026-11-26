@@ -1,4 +1,3 @@
-- Brand-new modern admin design: Dashboard, Notify, Popups and System
-- Pick a poster from trending movies & series or search — the notification fills itself
-- Popups (Premium, Join us, App share, Announcement, Audio & Dubs) work without any server setup
-- Publish settings with a GitHub token or the Worker
+- Users on the dashboard: total phones, active today/this week, top countries with flags, phone brands, models and Android versions
+- New Feedback inbox: read user problems, reply and mark them fixed — the user gets told
+- Modern admin design with poster picker for notifications

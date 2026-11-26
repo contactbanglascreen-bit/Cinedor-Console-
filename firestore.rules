@@ -1,0 +1,35 @@
+rules_version = '2';
+
+// Cinedor Firestore rules
+// - devices/{uid}: each phone writes only its own stats; only the admin can read them
+// - feedback/{id}: phones create their own feedback and read only their own; the admin reads all and marks them fixed
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null && request.auth.uid == 'xCbK5jp6PNf8UvTIE4mZYYLhpBj2';
+    }
+
+    match /devices/{uid} {
+      allow read: if isAdmin();
+      allow create, update: if request.auth != null && request.auth.uid == uid;
+      allow delete: if isAdmin();
+    }
+
+    match /feedback/{id} {
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status == 'open'
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 2000;
+      allow read: if isAdmin() || (request.auth != null && resource.data.uid == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    // Everything else is closed
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.rounded.Feedback
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Lock
@@ -116,6 +117,7 @@ class MainActivity : ComponentActivity() {
         val auth = AdminAuth(store)
         val api = WorkerApi(store, auth)
         val repo = ConfigRepo(store, api)
+        val cloud = CloudAdmin(auth)
         setContent {
             MaterialTheme(
                 colorScheme = darkColorScheme(
@@ -134,7 +136,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     var loggedIn by remember { mutableStateOf(auth.isLoggedIn) }
                     if (loggedIn) {
-                        AdminHome(store, auth, api, repo, onLogout = { auth.logout(); loggedIn = false })
+                        AdminHome(store, auth, api, repo, cloud, onLogout = { auth.logout(); loggedIn = false })
                     } else {
                         LoginScreen(store, auth, onDone = { loggedIn = true })
                     }
@@ -245,6 +247,7 @@ private fun ConnectionFields(store: AdminStore) {
 private enum class AdminTab(val label: String, val icon: ImageVector) {
     DASHBOARD("Dashboard", Icons.Rounded.Dashboard),
     NOTIFY("Notify", Icons.Rounded.NotificationsActive),
+    FEEDBACK("Feedback", Icons.Rounded.Feedback),
     POPUPS("Popups", Icons.Rounded.Widgets),
     SYSTEM("System", Icons.Rounded.Settings)
 }
@@ -271,7 +274,7 @@ private class ConfigState {
 }
 
 @Composable
-private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: ConfigRepo, onLogout: () -> Unit) {
+private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: ConfigRepo, cloud: CloudAdmin, onLogout: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var tab by remember { mutableStateOf(AdminTab.DASHBOARD) }
@@ -312,7 +315,8 @@ private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: 
 
         Box(Modifier.weight(1f)) {
             when (tab) {
-                AdminTab.DASHBOARD -> DashboardScreen(store, api, cs, onGo = { tab = it })
+                AdminTab.DASHBOARD -> DashboardScreen(store, api, cs, cloud, onGo = { tab = it })
+                AdminTab.FEEDBACK -> FeedbackScreen(cloud, store, api)
                 AdminTab.NOTIFY -> NotifyScreen(store, api)
                 AdminTab.POPUPS -> PopupsScreen(cs)
                 AdminTab.SYSTEM -> SystemScreen(store, api, cs, onLogout = { confirmLogout = true })
@@ -404,7 +408,7 @@ private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: 
 // =============================================================== dashboard
 
 @Composable
-private fun DashboardScreen(store: AdminStore, api: WorkerApi, cs: ConfigState, onGo: (AdminTab) -> Unit) {
+private fun DashboardScreen(store: AdminStore, api: WorkerApi, cs: ConfigState, cloud: CloudAdmin, onGo: (AdminTab) -> Unit) {
     var release by remember { mutableStateOf<ReleaseInfo?>(null) }
     var workerOnline by remember { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(Unit) {
@@ -465,6 +469,9 @@ private fun DashboardScreen(store: AdminStore, api: WorkerApi, cs: ConfigState, 
             StatTile(Icons.Rounded.Notifications, "Notifications sent", history.length().toString(), AdminColors.Green, Modifier.weight(1f))
         }
 
+        // Users: countries & phones
+        UsersSection(cloud)
+
         // Quick actions
         SectionTitle("Quick actions")
         val actions = listOf(
@@ -472,8 +479,10 @@ private fun DashboardScreen(store: AdminStore, api: WorkerApi, cs: ConfigState, 
             Triple(Icons.Rounded.WorkspacePremium, "Premium", AdminTab.POPUPS),
             Triple(Icons.Rounded.Groups, "Join us", AdminTab.POPUPS),
             Triple(Icons.Rounded.Share, "App share", AdminTab.POPUPS),
+            Triple(Icons.Rounded.Feedback, "Feedback", AdminTab.FEEDBACK),
             Triple(Icons.Rounded.Build, "Maintenance", AdminTab.SYSTEM),
-            Triple(Icons.Rounded.SystemUpdate, "Force update", AdminTab.SYSTEM)
+            Triple(Icons.Rounded.SystemUpdate, "Force update", AdminTab.SYSTEM),
+            Triple(Icons.Rounded.Settings, "Connection", AdminTab.SYSTEM)
         )
         actions.chunked(3).forEach { row ->
             Row(Modifier.padding(horizontal = 16.dp, vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

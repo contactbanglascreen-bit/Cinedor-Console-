@@ -154,10 +154,10 @@ class WorkerApi(private val store: AdminStore, private val auth: AdminAuth) {
         return json
     }
 
-    suspend fun send(title: String, body: String, image: String, link: String): String = withContext(Dispatchers.IO) {
+    suspend fun send(title: String, body: String, image: String, link: String, topic: String = "all"): String = withContext(Dispatchers.IO) {
         call(
             "/send", "POST",
-            JSONObject().put("title", title).put("body", body).put("image", image).put("link", link).put("topic", "all")
+            JSONObject().put("title", title).put("body", body).put("image", image).put("link", link).put("topic", topic)
         ).optString("id")
     }
 
@@ -304,5 +304,123 @@ object CinedorReleases {
             if (assets != null) for (i in 0 until assets.length()) dl += assets.optJSONObject(i)?.optInt("download_count") ?: 0
             ReleaseInfo(j.optString("name"), j.optString("tag_name"), dl, j.optString("published_at").take(10))
         }.getOrNull()
+    }
+}
+
+
+// ------------------------------------------------------------------ users & feedback (Firestore)
+
+data class DeviceInfo(
+    val uid: String,
+    val country: String,
+    val countryName: String,
+    val brand: String,
+    val model: String,
+    val android: String,
+    val appVersion: String,
+    val lastSeen: String
+)
+
+data class FeedbackEntry(
+    val id: String,
+    val uid: String,
+    val category: String,
+    val message: String,
+    val contact: String,
+    val status: String,
+    val reply: String,
+    val device: String,
+    val country: String,
+    val appVersion: String,
+    val createdAt: String
+) {
+    val isFixed get() = status == "fixed"
+}
+
+/** Reads phone stats and feedback from Firestore as the admin (rules allow only the admin UID). */
+class CloudAdmin(private val auth: AdminAuth) {
+    private val docs = "https://firestore.googleapis.com/v1/projects/cinedor-60aac/databases/(default)/documents"
+
+    private fun bearer() = mapOf("Authorization" to "Bearer " + auth.token())
+
+    private fun v(f: JSONObject?, name: String): String {
+        val o = f?.optJSONObject(name) ?: return ""
+        return o.optString("stringValue").ifBlank { o.optString("timestampValue") }
+    }
+
+    private fun check(r: HttpResult) {
+        if (r.code in 200..299) return
+        val msg = runCatching { JSONObject(r.body).optJSONObject("error")?.optString("message") }.getOrNull().orEmpty()
+        throw AdminException(
+            when {
+                r.code == 403 -> "Firestore blocked the request. Publish the Cinedor Firestore rules."
+                r.code == 404 || "does not exist" in msg -> "Firestore database isn't created yet."
+                else -> msg.ifBlank { "Firestore error ${r.code}" }
+            }
+        )
+    }
+
+    suspend fun devices(): List<DeviceInfo> = withContext(Dispatchers.IO) {
+        val out = mutableListOf<DeviceInfo>()
+        var pageToken = ""
+        repeat(10) {
+            val url = "$docs/devices?pageSize=300" + if (pageToken.isNotBlank()) "&pageToken=" + URLEncoder.encode(pageToken, "UTF-8") else ""
+            val r = http(url, headers = bearer())
+            check(r)
+            val j = JSONObject(r.body)
+            val arr = j.optJSONArray("documents")
+            if (arr != null) for (i in 0 until arr.length()) {
+                val d = arr.optJSONObject(i) ?: continue
+                val f = d.optJSONObject("fields")
+                out += DeviceInfo(
+                    uid = d.optString("name").substringAfterLast('/'),
+                    country = v(f, "country"), countryName = v(f, "countryName"),
+                    brand = v(f, "brand"), model = v(f, "model"), android = v(f, "android"),
+                    appVersion = v(f, "appVersion"), lastSeen = v(f, "lastSeen")
+                )
+            }
+            pageToken = j.optString("nextPageToken")
+            if (pageToken.isBlank()) return@withContext out
+        }
+        out
+    }
+
+    suspend fun feedback(): List<FeedbackEntry> = withContext(Dispatchers.IO) {
+        val q = JSONObject().put(
+            "structuredQuery", JSONObject()
+                .put("from", JSONArray().put(JSONObject().put("collectionId", "feedback")))
+                .put("orderBy", JSONArray().put(JSONObject().put("field", JSONObject().put("fieldPath", "createdAt")).put("direction", "DESCENDING")))
+                .put("limit", 300)
+        )
+        val r = http("$docs:runQuery", "POST", q.toString(), headers = bearer())
+        check(r)
+        val arr = JSONArray(r.body)
+        (0 until arr.length()).mapNotNull { i ->
+            val d = arr.optJSONObject(i)?.optJSONObject("document") ?: return@mapNotNull null
+            val f = d.optJSONObject("fields")
+            FeedbackEntry(
+                id = d.optString("name").substringAfterLast('/'),
+                uid = v(f, "uid"), category = v(f, "category"), message = v(f, "message"), contact = v(f, "contact"),
+                status = v(f, "status").ifBlank { "open" }, reply = v(f, "reply"), device = v(f, "device"),
+                country = v(f, "country"), appVersion = v(f, "appVersion"), createdAt = v(f, "createdAt")
+            )
+        }
+    }
+
+    suspend fun setStatus(id: String, fixed: Boolean, reply: String) = withContext(Dispatchers.IO) {
+        val now = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+            .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date())
+        val fields = JSONObject()
+            .put("status", JSONObject().put("stringValue", if (fixed) "fixed" else "open"))
+            .put("reply", JSONObject().put("stringValue", reply))
+            .put("fixedAt", JSONObject().put("timestampValue", now))
+        val mask = "updateMask.fieldPaths=status&updateMask.fieldPaths=reply&updateMask.fieldPaths=fixedAt"
+        val r = http("$docs/feedback/$id?$mask", "POST", JSONObject().put("fields", fields).toString(),
+            headers = bearer() + ("X-HTTP-Method-Override" to "PATCH"))
+        check(r)
+    }
+
+    suspend fun delete(id: String) = withContext(Dispatchers.IO) {
+        check(http("$docs/feedback/$id", "DELETE", headers = bearer()))
     }
 }
