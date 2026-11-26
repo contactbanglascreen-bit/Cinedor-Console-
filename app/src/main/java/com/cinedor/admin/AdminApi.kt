@@ -201,7 +201,13 @@ class ConfigRepo(private val store: AdminStore, private val worker: WorkerApi, p
 
     private fun find(): Found {
         for (ref in REFS) {
-            val r = http("https://api.github.com/repos/$REPO/contents/$PATH?ref=$ref", headers = ghHeaders())
+            var r = http("https://api.github.com/repos/$REPO/contents/$PATH?ref=$ref", headers = ghHeaders())
+            if (r.code == 401 || r.code == 403) {
+                r = http(
+                    "https://api.github.com/repos/$REPO/contents/$PATH?ref=$ref",
+                    headers = mapOf("Accept" to "application/vnd.github+json", "User-Agent" to "Cinedor-Admin")
+                )
+            }
             if (r.code in 200..299) {
                 val j = JSONObject(r.body)
                 val bytes = android.util.Base64.decode(j.optString("content").replace("\n", ""), android.util.Base64.DEFAULT)
@@ -239,10 +245,24 @@ class ConfigRepo(private val store: AdminStore, private val worker: WorkerApi, p
         )
     }
 
+    /** Built-in starting settings, used when nothing has been published yet. */
+    private val defaultConfig = "{\"premium\": {\"enabled\": false, \"id\": \"premium-1\", \"title\": \"Go Premium\", \"message\": \"Ad-free streaming, faster downloads and early access to new features.\", \"perks\": [\"No ads\", \"Super fast downloads\", \"4K & 1080p\", \"Early access\"], \"price\": \"\", \"buttonText\": \"Get Premium\", \"buttonUrl\": \"\", \"showEveryHours\": 24}, \"announcement\": {\"enabled\": false, \"id\": \"notice-1\", \"title\": \"Welcome to Cinedor\", \"message\": \"New movies and series are added every day.\", \"buttonText\": \"OK\", \"buttonUrl\": \"\"}, \"maintenance\": {\"enabled\": false, \"message\": \"Cinedor is under maintenance. Please come back in a little while.\"}, \"community\": {\"enabled\": false, \"id\": \"community-1\", \"title\": \"🎉 Join the Cinedor family\", \"message\": \"Get new movies, updates and requests first on our channels.\", \"buttonText\": \"Join our Telegram channel\", \"buttonUrl\": \"\", \"secondaryText\": \"Visit our Facebook page\", \"secondaryUrl\": \"\", \"showEveryHours\": 24}, \"sharePrompt\": {\"enabled\": false, \"id\": \"share-1\", \"title\": \"Enjoying the movie? 🍿\", \"message\": \"\", \"afterMinutes\": 20, \"perks\": [\"✨ Full HD\", \"⚡ Buffer free\", \"🎁 100% free\"], \"shareMessage\": \"\", \"buttonUrl\": \"\", \"showEveryHours\": 24}, \"audioDubs\": {\"enabled\": true, \"title\": \"Audio & Dubs\"}, \"minVersionCode\": 0, \"spotlight\": {\"enabled\": false, \"id\": \"spot-1\", \"title\": \"\", \"message\": \"\", \"image\": \"\", \"buttonText\": \"Watch now\", \"buttonUrl\": \"\", \"showEveryHours\": 24}}"
+
+    /** Public copy of the GitHub file (no API limits, no token). */
+    private fun loadRaw(): String? {
+        for (ref in REFS) {
+            val r = http("https://raw.githubusercontent.com/$REPO/$ref/$PATH?t=" + System.currentTimeMillis() / 60000)
+            if (r.code in 200..299 && runCatching { JSONObject(r.body) }.isSuccess) return r.body
+        }
+        return null
+    }
+
     suspend fun load(): Pair<String, String> = withContext(Dispatchers.IO) {
         runCatching { loadFirestore() }.getOrNull()?.let { return@withContext "Firebase" to it }
-        val f = find()
-        f.ref to f.text
+        runCatching { find() }.getOrNull()?.let { return@withContext it.ref to it.text }
+        runCatching { loadRaw() }.getOrNull()?.let { return@withContext "GitHub" to it }
+        // Nothing published yet: start from the default settings; Publish saves them to Firebase.
+        "new" to JSONObject(defaultConfig).toString(2)
     }
 
     val canSave: Boolean get() = true

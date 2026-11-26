@@ -978,7 +978,7 @@ private val POPUPS = listOf(
 private fun PopupsScreen(cs: ConfigState) {
     var open by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(bottom = 100.dp)) {
-        SectionTitle("Popups & features", "Turn on, edit, then Publish")
+        SectionTitle("Popups & features", if (cs.ref == "new") "First time: turn on what you want and tap Publish" else "Turn on, edit, then Publish")
         when {
             cs.config == null && cs.loading -> Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = AdminColors.Red, strokeWidth = 2.dp)

@@ -1,1 +1,2 @@
-- Bottom bar now shows every tab's name (Home, Notify, Feedback, Popups, System)
+- Popups and settings always open — no more "Settings file not found"
+- Bottom bar shows every tab's name (Home, Notify, Feedback, Popups, System)
