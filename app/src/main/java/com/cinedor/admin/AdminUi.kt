@@ -68,16 +68,31 @@ fun SectionTitle(title: String, subtitle: String? = null, modifier: Modifier = M
     }
 }
 
+/** App-icon style badge: glossy gradient squircle with a white icon (like iOS / One UI icons). */
 @Composable
 fun IconBadge(icon: ImageVector, tint: Color = AdminColors.RedBright, size: Dp = 40.dp) {
+    val shape = RoundedCornerShape(size * 0.3f)
+    val dark = Color(
+        red = tint.red * 0.55f,
+        green = tint.green * 0.55f,
+        blue = tint.blue * 0.55f,
+        alpha = 1f
+    )
     Box(
         Modifier
             .size(size)
-            .clip(RoundedCornerShape(size / 3.2f))
-            .background(tint.copy(alpha = 0.14f))
-            .border(1.dp, tint.copy(alpha = 0.25f), RoundedCornerShape(size / 3.2f)),
+            .clip(shape)
+            .background(Brush.linearGradient(listOf(tint, dark))),
         contentAlignment = Alignment.Center
-    ) { Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(size * 0.52f)) }
+    ) {
+        // glossy top highlight
+        Box(
+            Modifier
+                .matchParentSize()
+                .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.28f), Color.Transparent, Color.Transparent)))
+        )
+        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(size * 0.54f))
+    }
 }
 
 @Composable

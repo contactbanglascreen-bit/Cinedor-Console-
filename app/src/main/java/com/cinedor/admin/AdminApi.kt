@@ -184,7 +184,7 @@ class WorkerApi(private val store: AdminStore, private val auth: AdminAuth) {
  * App settings file (console/app-config.json in the Cinedor repo).
  * Reads work without any setup (public repo). Saving uses the Worker if set, otherwise a GitHub token.
  */
-class ConfigRepo(private val store: AdminStore, private val worker: WorkerApi) {
+class ConfigRepo(private val store: AdminStore, private val worker: WorkerApi, private val auth: AdminAuth) {
     companion object {
         const val REPO = "contactbanglascreen-bit/Baizid-"
         const val PATH = "console/app-config.json"
@@ -211,20 +211,51 @@ class ConfigRepo(private val store: AdminStore, private val worker: WorkerApi) {
         throw AdminException("Settings file not found")
     }
 
+    private val fsDoc = "https://firestore.googleapis.com/v1/projects/cinedor-60aac/databases/(default)/documents/config/app"
+
+    /** Settings stored in Firebase (config/app) — no token or server needed. */
+    private fun loadFirestore(): String? {
+        val r = http(fsDoc, headers = mapOf("Authorization" to "Bearer " + auth.token()))
+        if (r.code !in 200..299) return null
+        return JSONObject(r.body).optJSONObject("fields")?.optJSONObject("json")?.optString("stringValue")
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    private fun saveFirestore(text: String) {
+        val now = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+            .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date())
+        val fields = JSONObject()
+            .put("json", JSONObject().put("stringValue", text))
+            .put("updatedAt", JSONObject().put("timestampValue", now))
+        val r = http(
+            "$fsDoc?updateMask.fieldPaths=json&updateMask.fieldPaths=updatedAt", "POST",
+            JSONObject().put("fields", fields).toString(),
+            headers = mapOf("Authorization" to "Bearer " + auth.token(), "X-HTTP-Method-Override" to "PATCH")
+        )
+        if (r.code !in 200..299) throw AdminException(
+            if (r.code == 403) "Firebase blocked saving. Publish the Cinedor Firestore rules."
+            else if (r.code == 404) "Create the Firestore database in Firebase first."
+            else "Firebase save failed (${r.code})"
+        )
+    }
+
     suspend fun load(): Pair<String, String> = withContext(Dispatchers.IO) {
-        if (store.workerUrl.isNotBlank()) {
-            runCatching { return@withContext worker.loadConfig() }
-        }
+        runCatching { loadFirestore() }.getOrNull()?.let { return@withContext "Firebase" to it }
         val f = find()
         f.ref to f.text
     }
 
-    val canSave: Boolean get() = store.workerUrl.isNotBlank() || store.githubToken.isNotBlank()
+    val canSave: Boolean get() = true
 
     suspend fun save(text: String): String = withContext(Dispatchers.IO) {
         JSONObject(text)
-        if (store.workerUrl.isNotBlank()) return@withContext worker.saveConfig(text)
-        if (store.githubToken.isBlank()) throw AdminException("Add a GitHub token (System tab) or a Worker to publish.")
+        saveFirestore(text)
+        // Older app versions read the GitHub file: update it too when a token is set (optional).
+        if (store.githubToken.isNotBlank()) runCatching { saveGithub(text) }
+        "Firebase"
+    }
+
+    private fun saveGithub(text: String): String {
         val f = find()
         val body = JSONObject()
             .put("message", "Update Cinedor settings from Cinedor Admin")
@@ -232,10 +263,8 @@ class ConfigRepo(private val store: AdminStore, private val worker: WorkerApi) {
             .put("sha", f.sha)
             .put("branch", f.ref)
         val r = http("https://api.github.com/repos/$REPO/contents/$PATH", "PUT", body.toString(), headers = ghHeaders())
-        if (r.code !in 200..299) throw AdminException(
-            if (r.code == 401 || r.code == 403) "GitHub token can't write to the Cinedor repo" else "GitHub save failed (${r.code})"
-        )
-        f.ref
+        if (r.code !in 200..299) throw AdminException("GitHub save failed (${r.code})")
+        return f.ref
     }
 }
 

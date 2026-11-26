@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -37,6 +38,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.SpaceDashboard as FSpaceDashboard
+import androidx.compose.material.icons.outlined.SpaceDashboard as OSpaceDashboard
+import androidx.compose.material.icons.filled.NotificationsActive as FNotificationsActive
+import androidx.compose.material.icons.outlined.NotificationsActive as ONotificationsActive
+import androidx.compose.material.icons.filled.Forum as FForum
+import androidx.compose.material.icons.outlined.Forum as OForum
+import androidx.compose.material.icons.filled.AutoAwesomeMosaic as FAutoAwesomeMosaic
+import androidx.compose.material.icons.outlined.AutoAwesomeMosaic as OAutoAwesomeMosaic
+import androidx.compose.material.icons.filled.Tune as FTune
+import androidx.compose.material.icons.outlined.Tune as OTune
 import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudDone
@@ -116,7 +127,7 @@ class MainActivity : ComponentActivity() {
         val store = AdminStore(applicationContext)
         val auth = AdminAuth(store)
         val api = WorkerApi(store, auth)
-        val repo = ConfigRepo(store, api)
+        val repo = ConfigRepo(store, api, auth)
         val cloud = CloudAdmin(auth)
         setContent {
             MaterialTheme(
@@ -169,7 +180,6 @@ private fun LoginScreen(store: AdminStore, auth: AdminAuth, onDone: () -> Unit) 
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
-    var showConn by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -216,11 +226,8 @@ private fun LoginScreen(store: AdminStore, auth: AdminAuth, onDone: () -> Unit) 
                 }
             }
         }
-        Spacer(Modifier.height(10.dp))
-        TextButton(onClick = { showConn = !showConn }) {
-            Text(if (showConn) "Hide connection settings" else "Connection settings", color = AdminColors.Muted)
-        }
-        if (showConn) GlassCard(Modifier.fillMaxWidth()) { ConnectionFields(store) }
+        Spacer(Modifier.height(14.dp))
+        Text("🔒 Only the Cinedor owner account can sign in", color = AdminColors.Muted, fontSize = 12.sp)
     }
 }
 
@@ -244,12 +251,58 @@ private fun ConnectionFields(store: AdminStore) {
 
 // =============================================================== home shell
 
-private enum class AdminTab(val label: String, val icon: ImageVector) {
-    DASHBOARD("Dashboard", Icons.Rounded.Dashboard),
-    NOTIFY("Notify", Icons.Rounded.NotificationsActive),
-    FEEDBACK("Feedback", Icons.Rounded.Feedback),
-    POPUPS("Popups", Icons.Rounded.Widgets),
-    SYSTEM("System", Icons.Rounded.Settings)
+private enum class AdminTab(val label: String, val icon: ImageVector, val outline: ImageVector) {
+    DASHBOARD("Home", Icons.Filled.FSpaceDashboard, Icons.Outlined.OSpaceDashboard),
+    NOTIFY("Notify", Icons.Filled.FNotificationsActive, Icons.Outlined.ONotificationsActive),
+    FEEDBACK("Feedback", Icons.Filled.FForum, Icons.Outlined.OForum),
+    POPUPS("Popups", Icons.Filled.FAutoAwesomeMosaic, Icons.Outlined.OAutoAwesomeMosaic),
+    SYSTEM("System", Icons.Filled.FTune, Icons.Outlined.OTune)
+}
+
+/** Floating glass bottom bar: the active tab grows into a red pill with a filled icon and its name. */
+@Composable
+private fun AdminBottomBar(current: AdminTab, onSelect: (AdminTab) -> Unit) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(26.dp))
+                .background(Brush.verticalGradient(listOf(Color(0xFF221A1D), Color(0xFF161113))))
+                .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.03f))), RoundedCornerShape(26.dp))
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AdminTab.entries.forEach { t ->
+                val sel = t == current
+                Row(
+                    Modifier
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(if (sel) AdminColors.redBrush else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)))
+                        .clickable { onSelect(t) }
+                        .animateContentSize()
+                        .padding(horizontal = if (sel) 14.dp else 12.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        if (sel) t.icon else t.outline,
+                        contentDescription = t.label,
+                        tint = if (sel) Color.White else AdminColors.Muted,
+                        modifier = Modifier.size(23.dp)
+                    )
+                    if (sel) {
+                        Spacer(Modifier.width(7.dp))
+                        Text(t.label, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** Shared state for the settings file so every tab edits the same copy. */
@@ -345,23 +398,7 @@ private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: 
             }
         }
 
-        NavigationBar(containerColor = Color(0xFF120D0F), tonalElevation = 0.dp, modifier = Modifier.navigationBarsPadding()) {
-            AdminTab.entries.forEach { t ->
-                NavigationBarItem(
-                    selected = tab == t,
-                    onClick = { tab = t },
-                    icon = { Icon(t.icon, contentDescription = null) },
-                    label = { Text(t.label, fontSize = 11.sp) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color.White,
-                        indicatorColor = AdminColors.Red,
-                        unselectedIconColor = AdminColors.Muted,
-                        selectedTextColor = AdminColors.Text,
-                        unselectedTextColor = AdminColors.Muted
-                    )
-                )
-            }
-        }
+        AdminBottomBar(tab) { tab = it }
     }
 
     if (confirmPublish) {
@@ -488,13 +525,23 @@ private fun DashboardScreen(store: AdminStore, api: WorkerApi, cs: ConfigState, 
             Triple(Icons.Rounded.Feedback, "Feedback", AdminTab.FEEDBACK),
             Triple(Icons.Rounded.Build, "Maintenance", AdminTab.SYSTEM),
             Triple(Icons.Rounded.SystemUpdate, "Force update", AdminTab.SYSTEM),
-            Triple(Icons.Rounded.Settings, "Connection", AdminTab.SYSTEM)
+            Triple(Icons.Rounded.Settings, "Settings", AdminTab.SYSTEM)
         )
         actions.chunked(3).forEach { row ->
             Row(Modifier.padding(horizontal = 16.dp, vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 row.forEach { (icon, label, target) ->
                     GlassCard(Modifier.weight(1f), padding = 14.dp, onClick = { onGo(target) }) {
-                        IconBadge(icon, AdminColors.RedBright, 38.dp)
+                        val tint = when (label) {
+                            "Notify" -> Color(0xFFFF4D5A)
+                            "Premium" -> Color(0xFFF5B83D)
+                            "Join us" -> Color(0xFF2AABEE)
+                            "App share" -> Color(0xFF22C55E)
+                            "Feedback" -> Color(0xFFA78BFA)
+                            "Maintenance" -> Color(0xFFFB923C)
+                            "Force update" -> Color(0xFF60A5FA)
+                            else -> Color(0xFF94A3B8)
+                        }
+                        IconBadge(icon, tint, 42.dp)
                         Spacer(Modifier.height(10.dp))
                         Text(label, color = AdminColors.Text, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
                     }
@@ -505,14 +552,17 @@ private fun DashboardScreen(store: AdminStore, api: WorkerApi, cs: ConfigState, 
         // System status
         SectionTitle("System status")
         GlassCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+            StatusLine(Icons.Rounded.CheckCircle, "App settings", if (cs.config != null) "Saved in Firebase · ready" else cs.error.ifBlank { "Loading…" }, cs.config != null)
             StatusLine(
-                if (workerOnline == true) Icons.Rounded.CloudDone else Icons.Rounded.CloudOff,
-                "Notification server (Worker)",
-                when (workerOnline) { true -> "Online"; false -> "Not reachable"; null -> "Not set up" },
+                if (workerOnline == true) Icons.Rounded.CloudDone else Icons.Rounded.Notifications,
+                "Push notifications",
+                when (workerOnline) {
+                    true -> "Send from this app ✓"
+                    false -> "Server not reachable · use Firebase Console"
+                    null -> "Send from Firebase Console (topic: all)"
+                },
                 workerOnline == true
             )
-            StatusLine(Icons.Rounded.Key, "Publishing", if (store.githubToken.isNotBlank() || store.workerUrl.isNotBlank()) "Ready" else "Add GitHub token", store.githubToken.isNotBlank() || store.workerUrl.isNotBlank())
-            StatusLine(Icons.Rounded.CheckCircle, "Settings file", if (cs.config != null) "Loaded · ${cs.ref}" else cs.error.ifBlank { "Loading…" }, cs.config != null)
         }
 
         if (history.length() > 0) {
@@ -577,6 +627,7 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin) {
     var link by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf(false) }
+    var noServer by remember { mutableStateOf(false) }
     var historyTick by remember { mutableIntStateOf(0) }
     val history = remember(historyTick) { runCatching { JSONArray(store.historyJson()) }.getOrDefault(JSONArray()) }
 
@@ -714,7 +765,7 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin) {
         PrimaryButton("Send to all phones", Modifier.padding(horizontal = 16.dp).fillMaxWidth(), busy = busy, icon = Icons.Rounded.Send) {
             when {
                 title.isBlank() -> Toast.makeText(context, "Pick a poster or write a title", Toast.LENGTH_SHORT).show()
-                store.workerUrl.isBlank() -> Toast.makeText(context, "Add the Worker address in System → Connection first", Toast.LENGTH_LONG).show()
+                store.workerUrl.isBlank() -> noServer = true
                 else -> confirm = true
             }
         }
@@ -728,6 +779,38 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin) {
                 }
             }
         }
+    }
+
+    if (noServer) {
+        AlertDialog(
+            onDismissRequest = { noServer = false },
+            icon = { Icon(Icons.Rounded.Notifications, contentDescription = null, tint = AdminColors.RedBright) },
+            title = { Text("Send it from Firebase") },
+            text = {
+                Text(
+                    "Your message is ready. Open Firebase → Messaging → New campaign, paste it, choose Topic \"all\" and Publish. " +
+                        "The title and message are copied for you.",
+                    color = AdminColors.Muted
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    noServer = false
+                    val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("Cinedor notification", title + "\n" + body + (if (image.isNotBlank()) "\n" + image else "")))
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent(
+                                android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse("https://console.firebase.google.com/project/cinedor-60aac/messaging")
+                            ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                }) { Text("Copy & open Firebase", color = AdminColors.RedBright, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { noServer = false }) { Text("Close") } },
+            containerColor = AdminColors.Card
+        )
     }
 
     if (confirm) {
@@ -931,8 +1014,20 @@ private fun SystemScreen(store: AdminStore, api: WorkerApi, cs: ConfigState, onL
             }
         }
 
-        SectionTitle("Connection", "Worker sends notifications · GitHub token publishes settings")
-        GlassCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+        var advanced by remember { mutableStateOf(false) }
+        SectionTitle("Advanced (optional)", "Not needed — everything works without this")
+        GlassCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth(), onClick = if (advanced) null else ({ advanced = true })) {
+            if (!advanced) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconBadge(Icons.Rounded.Settings, Color(0xFF94A3B8), 40.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Notification server", color = AdminColors.Text, fontWeight = FontWeight.Bold)
+                        Text("Only if you set up the Cloudflare Worker to send pushes from this app", color = AdminColors.Muted, fontSize = 12.sp)
+                    }
+                    Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = null, tint = AdminColors.Muted)
+                }
+            } else {
             ConnectionFields(store)
             Spacer(Modifier.height(10.dp))
             SecondaryButton("Test notification server", Modifier.fillMaxWidth(), icon = Icons.Rounded.CloudDone) {
@@ -940,6 +1035,7 @@ private fun SystemScreen(store: AdminStore, api: WorkerApi, cs: ConfigState, onL
                     val ok = api.health()
                     Toast.makeText(context, if (ok) "Worker is online ✓" else "Can't reach the worker", Toast.LENGTH_SHORT).show()
                 }
+            }
             }
         }
 

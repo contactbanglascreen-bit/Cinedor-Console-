@@ -1,3 +1,3 @@
-- Users on the dashboard: total phones, active today/this week, top countries with flags, phone brands, models and Android versions
-- New Feedback inbox: read user problems, reply and mark them fixed — the user gets told
-- Modern admin design with poster picker for notifications
+- New floating bottom bar with filled icons and colourful app-style icons everywhere
+- No connection setup needed: settings are saved in Firebase
+- Notifications: if the server isn't set up, one tap copies your message and opens Firebase Messaging
