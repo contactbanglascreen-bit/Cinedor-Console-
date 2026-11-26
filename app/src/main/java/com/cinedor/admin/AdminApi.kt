@@ -277,8 +277,21 @@ data class PosterItem(
     val poster: String,
     val backdrop: String,
     val overview: String,
-    val rating: Double
-)
+    val rating: Double,
+    /** Cinedor catalog identity (empty for TMDB items): used to open the exact page in the app. */
+    val cid: String = "",
+    val src: String = "",
+    val path: String = ""
+) {
+    val inCinedor: Boolean get() = cid.isNotBlank()
+
+    /** Link the Cinedor app understands: opens this exact title (or searches the name for TMDB items). */
+    fun appLink(): String {
+        if (!inCinedor) return title
+        fun e(v: String) = URLEncoder.encode(v, "UTF-8")
+        return "cinedor://item?id=${e(cid)}&src=${e(src)}&path=${e(path)}&type=${e(type)}&t=${e(title)}&p=${e(poster)}"
+    }
+}
 
 /** Posters from TMDB (trending + search), so the admin can pick one instead of pasting a link. */
 object PosterSource {
@@ -465,5 +478,87 @@ class CloudAdmin(private val auth: AdminAuth) {
 
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
         check(http("$docs/feedback/$id", "DELETE", headers = bearer()))
+    }
+}
+
+
+/** Titles straight from the Cinedor app's own catalog (same server the app uses). */
+object CinedorCatalog {
+    private const val BASE = "https://inepulse-edge.siamvai9474737.workers.dev"
+    private const val KEY = "cp_live_c77b19611c9dcbf67de5a574b40adce88822e62a"
+
+    private fun JSONObject.str(vararg keys: String): String {
+        for (k in keys) {
+            val v = opt(k)
+            if (v is String && v.isNotBlank() && v != "null") return v.trim()
+            if (v is Number) return v.toString()
+        }
+        return ""
+    }
+
+    private fun JSONObject.img(vararg keys: String): String {
+        for (k in keys) {
+            when (val v = opt(k)) {
+                is String -> if (v.startsWith("http")) return v.trim()
+                is JSONObject -> v.str("url", "src", "image", "cover", "poster", "thumbnail", "high", "original").let { if (it.startsWith("http")) return it }
+            }
+        }
+        return ""
+    }
+
+    private fun item(o: JSONObject): PosterItem? {
+        val obj = o.optJSONObject("subject") ?: o.optJSONObject("item") ?: o
+        val title = obj.str("title", "name", "subjectTitle", "movieTitle")
+        if (title.isBlank()) return null
+        val poster = obj.img("poster", "posterUrl", "cover", "coverUrl", "thumbnail", "thumb", "image", "img", "verticalCover", "pic")
+        if (poster.isBlank()) return null
+        val backdrop = obj.img("backdrop", "backdropUrl", "banner", "bannerUrl", "horizontalCover", "still").ifBlank { poster }
+        val id = obj.str("subjectId", "id", "movieId", "slug", "detailPath", "url").ifBlank { title }
+        val rawType = obj.str("subjectType", "type", "mediaType", "category", "contentType")
+        val type = when (rawType) { "1" -> "Movie"; "2" -> "Series"; else -> if (rawType.contains("tv", true) || rawType.contains("series", true)) "Series" else "Movie" }
+        val year = obj.str("year", "releaseYear").ifBlank { obj.str("releaseDate", "release_date").take(4) }
+        return PosterItem(
+            id = id.hashCode().toLong(),
+            title = title,
+            year = year,
+            type = type,
+            poster = poster,
+            backdrop = backdrop,
+            overview = obj.str("description", "overview", "synopsis", "plot", "intro"),
+            rating = obj.str("imdbRatingValue", "rating", "score").toDoubleOrNull() ?: 0.0,
+            cid = id,
+            src = obj.str("source", "provider", "site").ifBlank { "moviebox" },
+            path = obj.str("detailPath", "url", "link", "slug")
+        )
+    }
+
+    private fun parse(body: String): List<PosterItem> {
+        val out = LinkedHashMap<String, PosterItem>()
+        fun walk(node: Any?, depth: Int) {
+            if (node == null || depth > 6) return
+            when (node) {
+                is JSONArray -> for (i in 0 until node.length()) {
+                    val o = node.opt(i)
+                    if (o is JSONObject) {
+                        val pi = item(o)
+                        if (pi != null) out.putIfAbsent(pi.title.lowercase() + pi.cid, pi) else walk(o, depth + 1)
+                    } else walk(o, depth + 1)
+                }
+                is JSONObject -> node.keys().forEach { k -> walk(node.opt(k), depth + 1) }
+            }
+        }
+        runCatching { walk(if (body.trim().startsWith("[")) JSONArray(body) else JSONObject(body), 0) }
+        return out.values.toList()
+    }
+
+    private fun get(path: String): List<PosterItem> = runCatching {
+        val r = http(BASE + path, headers = mapOf("x-api-key" to KEY, "Accept" to "application/json"))
+        if (r.code in 200..299) parse(r.body) else emptyList()
+    }.getOrDefault(emptyList())
+
+    suspend fun trending(): List<PosterItem> = withContext(Dispatchers.IO) { get("/api/v1/trending?source=all") }
+    suspend fun latest(): List<PosterItem> = withContext(Dispatchers.IO) { get("/api/v1/updates-24h?source=all") }
+    suspend fun search(q: String): List<PosterItem> = withContext(Dispatchers.IO) {
+        if (q.isBlank()) emptyList() else get("/api/v1/search?q=" + URLEncoder.encode(q, "UTF-8") + "&source=all")
     }
 }

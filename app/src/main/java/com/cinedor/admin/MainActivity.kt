@@ -322,7 +322,7 @@ private class ConfigState {
     }
 
     fun changed() { dirty = true }
-    fun enabledCount(): Int = listOf("premium", "announcement", "community", "sharePrompt")
+    fun enabledCount(): Int = listOf("spotlight", "premium", "announcement", "community", "sharePrompt")
         .count { config?.optJSONObject(it)?.optBoolean("enabled") == true }
 }
 
@@ -370,7 +370,7 @@ private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: 
             when (tab) {
                 AdminTab.DASHBOARD -> DashboardScreen(store, api, cs, cloud, onGo = { tab = it })
                 AdminTab.FEEDBACK -> FeedbackScreen(cloud, store, api)
-                AdminTab.NOTIFY -> NotifyScreen(store, api, cloud)
+                AdminTab.NOTIFY -> NotifyScreen(store, api, cloud, cs, repo)
                 AdminTab.POPUPS -> PopupsScreen(cs)
                 AdminTab.SYSTEM -> SystemScreen(store, api, cs, onLogout = { confirmLogout = true })
             }
@@ -613,10 +613,13 @@ private fun HistoryRow(h: JSONObject) {
 // =============================================================== notifications
 
 @Composable
-private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin) {
+private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin, cs: ConfigState, repo: ConfigRepo) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
+    var feed by remember { mutableStateOf("trending") }
+    var popupConfirm by remember { mutableStateOf(false) }
+    var popupBusy by remember { mutableStateOf(false) }
     var posters by remember { mutableStateOf<List<PosterItem>>(emptyList()) }
     var loadingPosters by remember { mutableStateOf(true) }
     var selected by remember { mutableStateOf<PosterItem?>(null) }
@@ -631,10 +634,16 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin) {
     var historyTick by remember { mutableIntStateOf(0) }
     val history = remember(historyTick) { runCatching { JSONArray(store.historyJson()) }.getOrDefault(JSONArray()) }
 
-    LaunchedEffect(query) {
+    // Titles from the Cinedor app itself (falls back to TMDB only if the app's server gives nothing).
+    LaunchedEffect(query, feed) {
         loadingPosters = true
-        if (query.isBlank()) posters = PosterSource.trending()
-        else { delay(400); posters = PosterSource.search(query) }
+        posters = if (query.isBlank()) {
+            val list = if (feed == "new") CinedorCatalog.latest() else CinedorCatalog.trending()
+            list.ifEmpty { PosterSource.trending() }
+        } else {
+            delay(400)
+            CinedorCatalog.search(query).ifEmpty { PosterSource.search(query) }
+        }
         loadingPosters = false
     }
 
@@ -643,7 +652,7 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin) {
         title = (if (p.type == "Series") "📺 " else "🎬 ") + p.title + (if (p.year.isNotBlank()) " (${p.year})" else "")
         body = p.overview.take(140).let { if (p.overview.length > 140) it.trimEnd() + "…" else it }.ifBlank { "Now streaming on Cinedor. Tap to watch!" }
         image = if (wide) p.backdrop else p.poster
-        link = p.title
+        link = p.appLink()
     }
 
     Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
@@ -657,10 +666,17 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin) {
                 CircularProgressIndicator(color = AdminColors.Red, strokeWidth = 2.dp)
             }
         } else {
-            Text(
-                if (query.isBlank()) "🔥 Trending today" else "Results for “$query”",
-                color = AdminColors.Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp)
-            )
+            if (query.isBlank()) {
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Chip("🔥 Trending in app", feed == "trending") { feed = "trending" }
+                    Chip("🆕 New in 24h", feed == "new") { feed = "new" }
+                }
+            } else {
+                Text(
+                    "Results for “$query”",
+                    color = AdminColors.Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp)
+                )
+            }
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(posters, key = { it.type + it.id }) { p ->
                     val sel = selected?.id == p.id
@@ -762,13 +778,35 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin) {
             }
         }
         Spacer(Modifier.height(14.dp))
-        PrimaryButton("Send to all phones", Modifier.padding(horizontal = 16.dp).fillMaxWidth(), busy = busy, icon = Icons.Rounded.Send) {
-            when {
-                title.isBlank() -> Toast.makeText(context, "Pick a poster or write a title", Toast.LENGTH_SHORT).show()
-                store.workerUrl.isBlank() -> noServer = true
-                else -> confirm = true
+        selected?.let { p ->
+            Row(
+                Modifier.padding(horizontal = 18.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                StatusChip(p.inCinedor, onText = "In Cinedor · opens its page", offText = "Not in Cinedor · opens search")
             }
         }
+        Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            PrimaryButton("Notification", Modifier.weight(1f), busy = busy, icon = Icons.Rounded.Send) {
+                when {
+                    title.isBlank() -> Toast.makeText(context, "Pick a poster or write a title", Toast.LENGTH_SHORT).show()
+                    store.workerUrl.isBlank() -> noServer = true
+                    else -> confirm = true
+                }
+            }
+            SecondaryButton("Popup in app", Modifier.weight(1f), icon = Icons.Rounded.Widgets) {
+                when {
+                    title.isBlank() -> Toast.makeText(context, "Pick a poster or write a title", Toast.LENGTH_SHORT).show()
+                    cs.config == null -> Toast.makeText(context, "Settings are still loading", Toast.LENGTH_SHORT).show()
+                    else -> popupConfirm = true
+                }
+            }
+        }
+        Text(
+            "Notification goes to every phone now · Popup shows inside the app when people open it",
+            color = AdminColors.Muted, fontSize = 11.5.sp,
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp)
+        )
 
         if (history.length() > 0) {
             SectionTitle("Sent from this phone")
@@ -779,6 +817,43 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin) {
                 }
             }
         }
+    }
+
+    if (popupConfirm) {
+        AlertDialog(
+            onDismissRequest = { if (!popupBusy) popupConfirm = false },
+            icon = { Icon(Icons.Rounded.Widgets, contentDescription = null, tint = AdminColors.RedBright) },
+            title = { Text("Show as popup?") },
+            text = { Text("\"$title\" will pop up for everyone the next time they open Cinedor (again every 24 hours until you turn it off in Popups).") },
+            confirmButton = {
+                TextButton(enabled = !popupBusy, onClick = {
+                    val sp = cs.section("spotlight")
+                    sp.put("enabled", true)
+                    sp.put("id", "spot-" + System.currentTimeMillis())
+                    sp.put("title", title.trim())
+                    sp.put("message", body.trim())
+                    sp.put("image", selected?.backdrop ?: image)
+                    sp.put("buttonText", "Watch now")
+                    sp.put("buttonUrl", link.trim())
+                    sp.put("showEveryHours", 24)
+                    val text = cs.config?.toString(2).orEmpty()
+                    popupBusy = text.isNotBlank()
+                    if (text.isNotBlank()) scope.launch {
+                        runCatching { repo.save(text) }
+                            .onSuccess {
+                                cs.dirty = false
+                                cs.tick++
+                                Toast.makeText(context, "Popup is live ✓", Toast.LENGTH_SHORT).show()
+                                popupConfirm = false
+                            }
+                            .onFailure { Toast.makeText(context, it.message ?: "Failed", Toast.LENGTH_LONG).show() }
+                        popupBusy = false
+                    }
+                }) { Text(if (popupBusy) "Publishing…" else "Show popup", color = AdminColors.RedBright, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { popupConfirm = false }) { Text("Cancel") } },
+            containerColor = AdminColors.Card
+        )
     }
 
     if (noServer) {
@@ -854,6 +929,11 @@ private data class PField(val key: String, val type: FType, val label: String, v
 private data class PopupDef(val key: String, val title: String, val desc: String, val icon: ImageVector, val tint: Color, val fields: List<PField>)
 
 private val POPUPS = listOf(
+    PopupDef("spotlight", "Featured title popup", "Movie popup with poster & Watch now", Icons.Rounded.Star, Color(0xFFFF4D5A), listOf(
+        PField("title", FType.TEXT, "Title"), PField("message", FType.AREA, "Message"),
+        PField("image", FType.TEXT, "Picture link"), PField("buttonText", FType.TEXT, "Button text"),
+        PField("showEveryHours", FType.NUMBER, "Show again every (hours)"), PField("id", FType.TEXT, "Popup ID (change to show again)")
+    )),
     PopupDef("premium", "Premium popup", "Gold popup with perks, price and a button", Icons.Rounded.WorkspacePremium, Color(0xFFF5C451), listOf(
         PField("title", FType.TEXT, "Title"), PField("message", FType.AREA, "Message"),
         PField("perks", FType.LIST, "Perks (comma separated)"), PField("price", FType.TEXT, "Price"),
