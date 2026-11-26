@@ -40,13 +40,17 @@ class AdminStore(context: Context) {
         get() = prefs.getString("apikey", "").orEmpty().ifBlank { DEFAULT_FIREBASE_KEY }
         set(v) = prefs.edit().putString("apikey", v.trim()).apply()
 
+    var githubToken: String
+        get() = prefs.getString("gh_token", "").orEmpty()
+        set(v) = prefs.edit().putString("gh_token", v.trim()).apply()
+
     fun historyJson(): String = prefs.getString("history", "[]").orEmpty()
     fun saveHistory(json: String) = prefs.edit().putString("history", json).apply()
 }
 
-private data class HttpResult(val code: Int, val body: String)
+internal data class HttpResult(val code: Int, val body: String)
 
-private fun http(
+internal fun http(
     url: String,
     method: String = "GET",
     body: String? = null,
@@ -171,5 +175,134 @@ class WorkerApi(private val store: AdminStore, private val auth: AdminAuth) {
         val base = store.workerUrl
         if (base.isBlank()) return@withContext false
         runCatching { http("$base/health").code in 200..299 }.getOrDefault(false)
+    }
+}
+
+
+/**
+ * App settings file (console/app-config.json in the Cinedor repo).
+ * Reads work without any setup (public repo). Saving uses the Worker if set, otherwise a GitHub token.
+ */
+class ConfigRepo(private val store: AdminStore, private val worker: WorkerApi) {
+    companion object {
+        const val REPO = "contactbanglascreen-bit/Baizid-"
+        const val PATH = "console/app-config.json"
+        val REFS = listOf("main", "ccr-c4b9015d-7d590g")
+    }
+
+    private fun ghHeaders(): Map<String, String> = buildMap {
+        put("Accept", "application/vnd.github+json")
+        put("User-Agent", "Cinedor-Admin")
+        if (store.githubToken.isNotBlank()) put("Authorization", "Bearer " + store.githubToken)
+    }
+
+    private data class Found(val ref: String, val sha: String, val text: String)
+
+    private fun find(): Found {
+        for (ref in REFS) {
+            val r = http("https://api.github.com/repos/$REPO/contents/$PATH?ref=$ref", headers = ghHeaders())
+            if (r.code in 200..299) {
+                val j = JSONObject(r.body)
+                val bytes = android.util.Base64.decode(j.optString("content").replace("\n", ""), android.util.Base64.DEFAULT)
+                return Found(ref, j.optString("sha"), String(bytes, Charsets.UTF_8))
+            }
+        }
+        throw AdminException("Settings file not found")
+    }
+
+    suspend fun load(): Pair<String, String> = withContext(Dispatchers.IO) {
+        if (store.workerUrl.isNotBlank()) {
+            runCatching { return@withContext worker.loadConfig() }
+        }
+        val f = find()
+        f.ref to f.text
+    }
+
+    val canSave: Boolean get() = store.workerUrl.isNotBlank() || store.githubToken.isNotBlank()
+
+    suspend fun save(text: String): String = withContext(Dispatchers.IO) {
+        JSONObject(text)
+        if (store.workerUrl.isNotBlank()) return@withContext worker.saveConfig(text)
+        if (store.githubToken.isBlank()) throw AdminException("Add a GitHub token (System tab) or a Worker to publish.")
+        val f = find()
+        val body = JSONObject()
+            .put("message", "Update Cinedor settings from Cinedor Admin")
+            .put("content", android.util.Base64.encodeToString(text.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP))
+            .put("sha", f.sha)
+            .put("branch", f.ref)
+        val r = http("https://api.github.com/repos/$REPO/contents/$PATH", "PUT", body.toString(), headers = ghHeaders())
+        if (r.code !in 200..299) throw AdminException(
+            if (r.code == 401 || r.code == 403) "GitHub token can't write to the Cinedor repo" else "GitHub save failed (${r.code})"
+        )
+        f.ref
+    }
+}
+
+/** A movie / series poster to attach to a notification. */
+data class PosterItem(
+    val id: Long,
+    val title: String,
+    val year: String,
+    val type: String,
+    val poster: String,
+    val backdrop: String,
+    val overview: String,
+    val rating: Double
+)
+
+/** Posters from TMDB (trending + search), so the admin can pick one instead of pasting a link. */
+object PosterSource {
+    private const val KEY = "17509a46d9802f1f5b73bf7b9d8bad7c"
+
+    private fun parse(body: String): List<PosterItem> {
+        val arr = JSONObject(body).optJSONArray("results") ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            val type = o.optString("media_type", if (o.has("first_air_date")) "tv" else "movie")
+            if (type != "movie" && type != "tv") return@mapNotNull null
+            val posterPath = o.optString("poster_path").takeIf { it.isNotBlank() && it != "null" } ?: return@mapNotNull null
+            val backdropPath = o.optString("backdrop_path").takeIf { it.isNotBlank() && it != "null" }
+            PosterItem(
+                id = o.optLong("id"),
+                title = o.optString("title").ifBlank { o.optString("name") },
+                year = (o.optString("release_date").ifBlank { o.optString("first_air_date") }).take(4),
+                type = if (type == "tv") "Series" else "Movie",
+                poster = "https://image.tmdb.org/t/p/w500$posterPath",
+                backdrop = backdropPath?.let { "https://image.tmdb.org/t/p/w780$it" } ?: "https://image.tmdb.org/t/p/w780$posterPath",
+                overview = o.optString("overview"),
+                rating = o.optDouble("vote_average", 0.0)
+            )
+        }
+    }
+
+    suspend fun trending(): List<PosterItem> = withContext(Dispatchers.IO) {
+        runCatching { parse(http("https://api.themoviedb.org/3/trending/all/day?api_key=$KEY").body) }.getOrDefault(emptyList())
+    }
+
+    suspend fun search(query: String): List<PosterItem> = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext emptyList()
+        runCatching {
+            parse(http("https://api.themoviedb.org/3/search/multi?api_key=$KEY&query=" + URLEncoder.encode(query, "UTF-8")).body)
+        }.getOrDefault(emptyList())
+    }
+}
+
+/** Latest public Cinedor release (shown on the dashboard). */
+data class ReleaseInfo(val name: String, val tag: String, val downloads: Int, val publishedAt: String)
+
+object CinedorReleases {
+    suspend fun latest(): ReleaseInfo? = withContext(Dispatchers.IO) {
+        runCatching {
+            val r = http(
+                "https://api.github.com/repos/${ConfigRepo.REPO}/releases/latest",
+                headers = mapOf("Accept" to "application/vnd.github+json", "User-Agent" to "Cinedor-Admin")
+            )
+            if (r.code !in 200..299) return@runCatching null
+            val j = JSONObject(r.body)
+            val assets = j.optJSONArray("assets")
+            var dl = 0
+            if (assets != null) for (i in 0 until assets.length()) dl += assets.optJSONObject(i)?.optInt("download_count") ?: 0
+            ReleaseInfo(j.optString("name"), j.optString("tag_name"), dl, j.optString("published_at").take(10))
+        }.getOrNull()
     }
 }

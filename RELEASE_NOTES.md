@@ -1,3 +1,4 @@
-- Cinedor Admin app: send text and poster notifications to every phone
-- Edit Premium, Announcement, Join us, Share popup, Audio & Dubs, Maintenance and Force update
-- Updates itself release by release
+- Brand-new modern admin design: Dashboard, Notify, Popups and System
+- Pick a poster from trending movies & series or search — the notification fills itself
+- Popups (Premium, Join us, App share, Announcement, Audio & Dubs) work without any server setup
+- Publish settings with a GitHub token or the Worker
