@@ -3,7 +3,7 @@ package com.cinedor.admin
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import androidx.security.crypto.MasterKeys
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -19,9 +19,9 @@ class AdminException(message: String) : Exception(message)
 /** Encrypted storage (Android Keystore) for the login session and connection settings. */
 class AdminStore(context: Context) {
     private val prefs: SharedPreferences = runCatching {
-        val key = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
+        val alias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
         EncryptedSharedPreferences.create(
-            context, "cinedor_admin_secure", key,
+            "cinedor_admin_secure", alias, context,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
