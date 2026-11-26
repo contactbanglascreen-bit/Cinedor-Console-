@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Cinedor Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0809;
+    --panel: #151012;
+    --panel-2: #1d1619;
+    --line: #2c2125;
+    --text: #f6eef0;
+    --muted: #a8979c;
+    --red: #e50914;
+    --red-2: #ff3b45;
+    --red-dark: #8a0710;
+    --green: #22c55e;
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: "Plus Jakarta Sans", system-ui, sans-serif; }
+  body { min-height: 100vh; }
+  a { color: var(--red-2); }
+  button { font: inherit; cursor: pointer; }
+  input, textarea, select {
+    width: 100%; font: inherit; color: var(--text); background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; outline: none;
+  }
+  input:focus, textarea:focus { border-color: var(--red); }
+  textarea { resize: vertical; min-height: 84px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; font-weight: 600; }
+
+  .hidden { display: none !important; }
+  .btn {
+    border: 0; border-radius: 999px; padding: 12px 20px; font-weight: 800; color: #fff;
+    background: linear-gradient(135deg, var(--red-2), var(--red-dark));
+    box-shadow: 0 8px 24px rgba(229, 9, 20, .25);
+  }
+  .btn:disabled { opacity: .55; cursor: wait; }
+  .btn.ghost { background: transparent; border: 1px solid var(--line); box-shadow: none; color: var(--text); }
+  .btn.small { padding: 8px 14px; font-size: 13px; }
+
+  /* Login */
+  .login { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+  .login-card {
+    width: 100%; max-width: 380px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 28px; padding: 28px; box-shadow: 0 30px 80px rgba(0,0,0,.5);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo {
+    width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--red-2), var(--red-dark)); font-weight: 800; font-size: 24px;
+  }
+  .brand h1 { margin: 0; font-size: 20px; letter-spacing: 3px; }
+  .brand small { color: var(--muted); letter-spacing: 0; display: block; font-size: 12px; }
+  .error { color: #ff8a8f; font-size: 13px; margin-top: 10px; min-height: 18px; }
+
+  /* Shell */
+  header.top {
+    position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px; background: rgba(11, 8, 9, .9); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line);
+  }
+  header.top .grow { flex: 1; }
+  .tabs { display: flex; gap: 8px; padding: 14px 16px 0; overflow-x: auto; }
+  .tab {
+    border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px;
+    padding: 9px 16px; font-weight: 700; white-space: nowrap;
+  }
+  .tab.active { background: var(--red); border-color: var(--red); }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  .grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+  .card h2 { margin: 0 0 4px; font-size: 17px; }
+  .card p.sub { margin: 0 0 6px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .chip { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 600; }
+
+  /* Phone notification preview */
+  .phone {
+    border-radius: 30px; padding: 16px; background: linear-gradient(160deg, #2a1d22, #120d0f);
+    border: 1px solid var(--line); min-height: 320px;
+  }
+  .phone .clock { text-align: center; font-size: 40px; font-weight: 800; margin: 6px 0 14px; opacity: .9; }
+  .notif { background: rgba(255,255,255,.92); color: #1b1b1b; border-radius: 20px; padding: 12px 14px; }
+  .notif .head { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #555; }
+  .notif .app-dot { width: 18px; height: 18px; border-radius: 6px; background: var(--red); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 800; }
+  .notif .title { font-weight: 800; margin-top: 6px; }
+  .notif .body { font-size: 14px; color: #333; margin-top: 2px; white-space: pre-wrap; }
+  .notif img { width: 100%; border-radius: 12px; margin-top: 10px; max-height: 220px; object-fit: cover; display: block; }
+
+  .history { list-style: none; padding: 0; margin: 8px 0 0; }
+  .history li { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 13px; }
+  .history img { width: 44px; height: 60px; object-fit: cover; border-radius: 8px; background: var(--panel-2); }
+  .history .muted { color: var(--muted); font-size: 12px; }
+
+  .switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; }
+  .switch input { width: 46px; height: 26px; appearance: none; background: var(--line); border-radius: 999px; position: relative; padding: 0; border: 0; cursor: pointer; flex: none; }
+  .switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: .2s; }
+  .switch input:checked { background: var(--red); }
+  .switch input:checked::after { left: 23px; }
+  .section-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+  .toast {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: #1f1a1c; border: 1px solid var(--line);
+    padding: 12px 18px; border-radius: 14px; font-weight: 600; box-shadow: 0 10px 40px rgba(0,0,0,.5); z-index: 50; max-width: calc(100% - 32px);
+  }
+  .toast.ok { border-color: var(--green); }
+  .toast.bad { border-color: var(--red); }
+  code { background: var(--panel-2); padding: 2px 6px; border-radius: 6px; }
+</style>
+</head>
+<body>
+
+<!-- Login -->
+<section id="loginView" class="login">
+  <div class="login-card">
+    <div class="brand">
+      <div class="logo">C</div>
+      <div><h1>CINEDOR</h1><small>Admin panel</small></div>
+    </div>
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="username" placeholder="admin@example.com">
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="current-password" placeholder="••••••••">
+    <div class="error" id="loginError"></div>
+    <button class="btn" id="loginBtn" style="width:100%;margin-top:6px">Log in</button>
+    <details style="margin-top:16px;color:var(--muted);font-size:13px">
+      <summary>Connection settings</summary>
+      <label for="setWorker">Worker address</label>
+      <input id="setWorker" placeholder="https://cinedor-admin.YOUR-NAME.workers.dev">
+      <label for="setKey">Firebase Web API key</label>
+      <input id="setKey">
+      <button class="btn ghost small" id="saveSettings" style="margin-top:10px">Save</button>
+    </details>
+  </div>
+</section>
+
+<!-- App -->
+<section id="appView" class="hidden">
+  <header class="top">
+    <div class="brand">
+      <div class="logo" style="width:36px;height:36px;font-size:19px;border-radius:11px">C</div>
+      <div><h1 style="font-size:16px">CINEDOR</h1><small>Admin panel</small></div>
+    </div>
+    <div class="grow"></div>
+    <span class="chip" id="whoami"></span>
+    <button class="btn ghost small" id="logoutBtn">Log out</button>
+  </header>
+  <nav class="tabs">
+    <button class="tab active" data-tab="push">🔔 Notifications</button>
+    <button class="tab" data-tab="settings">⚙️ App settings</button>
+    <button class="tab" data-tab="raw">{ } Raw file</button>
+    <button class="tab" data-tab="connection">🔌 Connection</button>
+  </nav>
+
+  <main>
+    <!-- Notifications -->
+    <div data-view="push" class="grid">
+      <div class="card">
+        <h2>Send a notification</h2>
+        <p class="sub">Goes to every phone with Cinedor installed. Add a poster link for a big picture notification.</p>
+        <div class="chips">
+          <button class="chip" data-tpl="movie">🎬 New movie</button>
+          <button class="chip" data-tpl="episode">📺 New episode</button>
+          <button class="chip" data-tpl="update">🚀 App update</button>
+          <button class="chip" data-tpl="live">⚽ Live match</button>
+        </div>
+        <label for="nTitle">Title</label>
+        <input id="nTitle" maxlength="80" placeholder="New on Cinedor: Lucifer S6">
+        <label for="nBody">Message</label>
+        <textarea id="nBody" maxlength="300" placeholder="All episodes in Hindi & English. Watch now!"></textarea>
+        <label for="nImage">Poster image link (optional, https://)</label>
+        <input id="nImage" placeholder="https://image.tmdb.org/t/p/w780/....jpg">
+        <label for="nLink">Open in app (optional: a title to search)</label>
+        <input id="nLink" placeholder="Lucifer">
+        <div class="row" style="margin-top:16px">
+          <button class="btn" id="sendBtn">Send to all phones</button>
+          <span class="muted" style="color:var(--muted);font-size:12px">Delivered in a few seconds</span>
+        </div>
+      </div>
+      <div>
+        <div class="phone">
+          <div class="clock" id="clock">12:00</div>
+          <div class="notif">
+            <div class="head"><span class="app-dot">C</span> Cinedor · now</div>
+            <div class="title" id="pTitle">Title</div>
+            <div class="body" id="pBody">Message</div>
+            <img id="pImage" class="hidden" alt="">
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <h2>Sent from this browser</h2>
+          <ul class="history" id="history"></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- App settings -->
+    <div data-view="settings" class="hidden">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <p class="sub" style="color:var(--muted);margin:0" id="cfgInfo">Loading settings…</p>
+        <div class="row">
+          <button class="btn ghost small" id="reloadCfg">Reload</button>
+          <button class="btn" id="saveCfg">Publish to all phones</button>
+        </div>
+      </div>
+      <div class="section-grid" id="cfgForm"></div>
+    </div>
+
+    <!-- Raw -->
+    <div data-view="raw" class="hidden card">
+      <h2>console/app-config.json</h2>
+      <p class="sub">Advanced: edit the settings file directly.</p>
+      <textarea id="rawCfg" style="min-height:420px;font-family:ui-monospace,monospace;font-size:13px"></textarea>
+      <div class="row" style="margin-top:12px"><button class="btn" id="saveRaw">Save file</button></div>
+    </div>
+
+    <!-- Connection -->
+    <div data-view="connection" class="hidden card">
+      <h2>Connection</h2>
+      <p class="sub">The Worker keeps the Firebase private key and GitHub token safe. This page never sees them.</p>
+      <label for="setWorker2">Worker address</label>
+      <input id="setWorker2">
+      <label for="setKey2">Firebase Web API key</label>
+      <input id="setKey2">
+      <div class="row" style="margin-top:12px">
+        <button class="btn" id="saveSettings2">Save</button>
+        <button class="btn ghost" id="testWorker">Test worker</button>
+      </div>
+    </div>
+  </main>
+</section>
+
+<div id="toast" class="toast hidden"></div>
+
+<script>
+(() => {
+  const DEFAULT_API_KEY = "AIzaSyCddEpMsakf5vHeLlHuJLMPUCC50uTYOpY";
+  const ADMIN_UID = "xCbK5jp6PNf8UvTIE4mZYYLhpBj2";
+  const $ = (id) => document.getElementById(id);
+
+  const store = {
+    get(k, d = "") { try { return localStorage.getItem("cinedor_" + k) ?? d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem("cinedor_" + k, v); } catch {} },
+    del(k) { try { localStorage.removeItem("cinedor_" + k); } catch {} },
+  };
+  const settings = {
+    get worker() { return store.get("worker").replace(/\/+$/, ""); },
+    get apiKey() { return store.get("apikey", DEFAULT_API_KEY) || DEFAULT_API_KEY; },
+  };
+
+  function toast(msg, ok = true) {
+    const t = $("toast");
+    t.textContent = msg;
+    t.className = "toast " + (ok ? "ok" : "bad");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => t.classList.add("hidden"), 3800);
+  }
+
+  // ---------- Auth (Firebase Auth REST) ----------
+  let session = null; // { idToken, refreshToken, exp, uid, email }
+
+  async function login(email, password) {
+    const r = await fetch("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" + settings.apiKey, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, returnSecureToken: true }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(friendlyAuthError(d.error?.message));
+    if (d.localId !== ADMIN_UID) throw new Error("This account is not the Cinedor admin.");
+    session = { idToken: d.idToken, refreshToken: d.refreshToken, exp: Date.now() + (d.expiresIn - 60) * 1000, uid: d.localId, email: d.email };
+    store.set("refresh", d.refreshToken);
+    store.set("email", d.email);
+  }
+
+  async function refresh() {
+    const rt = session?.refreshToken || store.get("refresh");
+    if (!rt) throw new Error("Not logged in");
+    const r = await fetch("https://securetoken.googleapis.com/v1/token?key=" + settings.apiKey, {
+      method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "grant_type=refresh_token&refresh_token=" + encodeURIComponent(rt),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error("Please log in again");
+    if (d.user_id !== ADMIN_UID) throw new Error("This account is not the Cinedor admin.");
+    session = { idToken: d.id_token, refreshToken: d.refresh_token, exp: Date.now() + (d.expires_in - 60) * 1000, uid: d.user_id, email: store.get("email") };
+    store.set("refresh", d.refresh_token);
+  }
+
+  async function idToken() {
+    if (!session || Date.now() > session.exp) await refresh();
+    return session.idToken;
+  }
+
+  function friendlyAuthError(code = "") {
+    if (/INVALID_LOGIN_CREDENTIALS|INVALID_PASSWORD|EMAIL_NOT_FOUND/.test(code)) return "Wrong email or password.";
+    if (/TOO_MANY_ATTEMPTS/.test(code)) return "Too many tries. Wait a few minutes.";
+    if (/API_KEY|blocked|BLOCKED/.test(code)) return "The Firebase key blocks web logins. Add a Web app in Firebase and paste its API key in Connection settings.";
+    if (/PASSWORD_LOGIN_DISABLED|OPERATION_NOT_ALLOWED/.test(code)) return "Turn on Email/Password sign-in in Firebase → Authentication.";
+    return code || "Login failed.";
+  }
+
+  async function api(path, method = "GET", body) {
+    if (!settings.worker) throw new Error("Set the Worker address in Connection first.");
+    const r = await fetch(settings.worker + path, {
+      method,
+      headers: { Authorization: "Bearer " + (await idToken()), ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const d = await r.json().catch(() => ({ ok: false, error: "Worker returned " + r.status }));
+    if (!r.ok || !d.ok) throw new Error(d.error || "Request failed");
+    return d;
+  }
+
+  // ---------- Views ----------
+  function showApp() {
+    $("loginView").classList.add("hidden");
+    $("appView").classList.remove("hidden");
+    $("whoami").textContent = session?.email || "Admin";
+    fillSettings();
+    loadConfig();
+  }
+  function showLogin() {
+    $("appView").classList.add("hidden");
+    $("loginView").classList.remove("hidden");
+    fillSettings();
+  }
+  function fillSettings() {
+    for (const id of ["setWorker", "setWorker2"]) $(id).value = settings.worker;
+    for (const id of ["setKey", "setKey2"]) $(id).value = settings.apiKey;
+  }
+  function saveSettingsFrom(w, k) {
+    store.set("worker", $(w).value.trim());
+    store.set("apikey", $(k).value.trim() || DEFAULT_API_KEY);
+    fillSettings();
+    toast("Saved");
+  }
+
+  document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("active", x === b));
+    document.querySelectorAll("[data-view]").forEach((v) => v.classList.toggle("hidden", v.dataset.view !== b.dataset.tab));
+  }));
+
+  $("loginBtn").addEventListener("click", async () => {
+    $("loginError").textContent = "";
+    $("loginBtn").disabled = true;
+    try { await login($("email").value.trim(), $("password").value); showApp(); }
+    catch (e) { $("loginError").textContent = e.message; }
+    finally { $("loginBtn").disabled = false; }
+  });
+  $("password").addEventListener("keydown", (e) => { if (e.key === "Enter") $("loginBtn").click(); });
+  $("logoutBtn").addEventListener("click", () => { session = null; store.del("refresh"); showLogin(); });
+  $("saveSettings").addEventListener("click", () => saveSettingsFrom("setWorker", "setKey"));
+  $("saveSettings2").addEventListener("click", () => saveSettingsFrom("setWorker2", "setKey2"));
+  $("testWorker").addEventListener("click", async () => {
+    try {
+      const r = await fetch(settings.worker + "/health");
+      toast(r.ok ? "Worker is online ✓" : "Worker answered " + r.status, r.ok);
+    } catch { toast("Can't reach the worker", false); }
+  });
+
+  // ---------- Notifications ----------
+  const templates = {
+    movie: ["🎬 New movie on Cinedor", "Watch it now in HD — free."],
+    episode: ["📺 New episode is here", "The latest episode just dropped. Tap to watch."],
+    update: ["🚀 Cinedor update", "A new version is ready with new features and fixes. Open the app to update."],
+    live: ["⚽ Live now", "The match has started. Watch live on Cinedor."],
+  };
+  document.querySelectorAll("[data-tpl]").forEach((b) => b.addEventListener("click", () => {
+    const [t, m] = templates[b.dataset.tpl];
+    $("nTitle").value = t; $("nBody").value = m; preview();
+  }));
+  function preview() {
+    $("pTitle").textContent = $("nTitle").value || "Title";
+    $("pBody").textContent = $("nBody").value || "Message";
+    const img = $("nImage").value.trim();
+    $("pImage").classList.toggle("hidden", !/^https:\/\//.test(img));
+    if (/^https:\/\//.test(img)) $("pImage").src = img;
+  }
+  ["nTitle", "nBody", "nImage"].forEach((id) => $(id).addEventListener("input", preview));
+  $("pImage").addEventListener("error", () => $("pImage").classList.add("hidden"));
+  setInterval(() => { const d = new Date(); $("clock").textContent = d.toTimeString().slice(0, 5); }, 1000);
+
+  function history() { try { return JSON.parse(store.get("history", "[]")); } catch { return []; } }
+  function renderHistory() {
+    const ul = $("history");
+    ul.innerHTML = "";
+    const h = history();
+    if (!h.length) { ul.innerHTML = '<li class="muted">Nothing sent yet</li>'; return; }
+    for (const n of h) {
+      const li = document.createElement("li");
+      const img = document.createElement("img");
+      if (n.image) img.src = n.image; else img.style.visibility = "hidden";
+      const box = document.createElement("div");
+      const t = document.createElement("div"); t.style.fontWeight = "700"; t.textContent = n.title;
+      const b = document.createElement("div"); b.textContent = n.body;
+      const m = document.createElement("div"); m.className = "muted"; m.textContent = new Date(n.at).toLocaleString();
+      box.append(t, b, m); li.append(img, box); ul.append(li);
+    }
+  }
+  $("sendBtn").addEventListener("click", async () => {
+    const payload = {
+      title: $("nTitle").value.trim(), body: $("nBody").value.trim(),
+      image: $("nImage").value.trim(), link: $("nLink").value.trim(), topic: "all",
+    };
+    if (!payload.title) return toast("Write a title first", false);
+    if (!confirm("Send this notification to every Cinedor user?")) return;
+    $("sendBtn").disabled = true;
+    try {
+      await api("/send", "POST", payload);
+      const h = history(); h.unshift({ ...payload, at: Date.now() });
+      store.set("history", JSON.stringify(h.slice(0, 20)));
+      renderHistory();
+      toast("Sent to all phones ✓");
+    } catch (e) { toast(e.message, false); }
+    finally { $("sendBtn").disabled = false; }
+  });
+
+  // ---------- App settings (console/app-config.json) ----------
+  const SCHEMA = [
+    { key: "premium", title: "💎 Premium popup", fields: [
+      ["enabled", "switch", "Show Premium popup"], ["title", "text", "Title"], ["message", "area", "Message"],
+      ["perks", "list", "Perks (comma separated)"], ["price", "text", "Price"], ["buttonText", "text", "Button text"],
+      ["buttonUrl", "text", "Button link"], ["showEveryHours", "number", "Show again every (hours)"], ["id", "text", "Popup ID (change to show again)"] ] },
+    { key: "announcement", title: "📢 Announcement", fields: [
+      ["enabled", "switch", "Show announcement"], ["title", "text", "Title"], ["message", "area", "Message"],
+      ["buttonText", "text", "Button text"], ["buttonUrl", "text", "Button link"], ["id", "text", "Announcement ID"] ] },
+    { key: "community", title: "🎉 Join us popup (Telegram / Facebook)", fields: [
+      ["enabled", "switch", "Show Join us popup"], ["title", "text", "Title"], ["message", "area", "Message"],
+      ["buttonText", "text", "Button 1 text"], ["buttonUrl", "text", "Button 1 link (Telegram)"],
+      ["secondaryText", "text", "Button 2 text"], ["secondaryUrl", "text", "Button 2 link (Facebook)"],
+      ["showEveryHours", "number", "Show again every (hours)"], ["id", "text", "Popup ID"] ] },
+    { key: "sharePrompt", title: "🍿 Share popup (Enjoying the movie?)", fields: [
+      ["enabled", "switch", "Ask viewers to share"], ["afterMinutes", "number", "Show after watching (minutes)"],
+      ["title", "text", "Title"], ["message", "area", "Message (empty = automatic)"], ["perks", "list", "Perks (max 3)"],
+      ["shareMessage", "area", "Text that gets shared"], ["buttonUrl", "text", "App download link"],
+      ["showEveryHours", "number", "Ask again every (hours)"], ["id", "text", "Popup ID"] ] },
+    { key: "audioDubs", title: "🎧 Audio & Dubs section", fields: [
+      ["enabled", "switch", "Show on title pages"], ["title", "text", "Section title"] ] },
+    { key: "maintenance", title: "🛠️ Maintenance", fields: [
+      ["enabled", "switch", "Maintenance mode (blocks the app)"], ["message", "area", "Message"] ] },
+    { key: "", title: "⬆️ Force update", fields: [ ["minVersionCode", "number", "Force update below version (0 = off)"] ] },
+  ];
+  let config = {};
+
+  function renderForm() {
+    const form = $("cfgForm");
+    form.innerHTML = "";
+    for (const sec of SCHEMA) {
+      const card = document.createElement("div");
+      card.className = "card";
+      const h = document.createElement("h2"); h.textContent = sec.title; card.append(h);
+      const obj = sec.key ? (config[sec.key] = config[sec.key] || {}) : config;
+      for (const [f, type, label] of sec.fields) {
+        if (type === "switch") {
+          const row = document.createElement("div"); row.className = "switch";
+          const span = document.createElement("span"); span.textContent = label;
+          const input = document.createElement("input"); input.type = "checkbox"; input.checked = !!obj[f];
+          input.addEventListener("change", () => { obj[f] = input.checked; syncRaw(); });
+          row.append(span, input); card.append(row);
+          continue;
+        }
+        const l = document.createElement("label"); l.textContent = label; card.append(l);
+        const input = document.createElement(type === "area" ? "textarea" : "input");
+        if (type === "number") input.type = "number";
+        input.value = type === "list" ? (obj[f] || []).join(", ") : (obj[f] ?? "");
+        input.addEventListener("input", () => {
+          obj[f] = type === "number" ? Number(input.value || 0)
+            : type === "list" ? input.value.split(",").map((s) => s.trim()).filter(Boolean)
+            : input.value;
+          syncRaw();
+        });
+        card.append(input);
+      }
+      form.append(card);
+    }
+  }
+  function syncRaw() { $("rawCfg").value = JSON.stringify(config, null, 2); }
+
+  async function loadConfig() {
+    $("cfgInfo").textContent = "Loading settings…";
+    try {
+      const d = await api("/config");
+      config = JSON.parse(d.config);
+      $("cfgInfo").textContent = "Settings file on branch “" + d.ref + "”. Changes reach phones the next time the app opens.";
+      renderForm(); syncRaw();
+    } catch (e) {
+      $("cfgInfo").textContent = "Couldn't load settings: " + e.message;
+    }
+  }
+  async function saveConfig(text) {
+    try {
+      JSON.parse(text);
+    } catch { return toast("The file is not valid JSON", false); }
+    if (!confirm("Publish these settings to every phone?")) return;
+    try {
+      await api("/config", "POST", { config: text });
+      toast("Published ✓");
+    } catch (e) { toast(e.message, false); }
+  }
+  $("reloadCfg").addEventListener("click", loadConfig);
+  $("saveCfg").addEventListener("click", () => saveConfig(JSON.stringify(config, null, 2)));
+  $("saveRaw").addEventListener("click", async () => {
+    await saveConfig($("rawCfg").value);
+    try { config = JSON.parse($("rawCfg").value); renderForm(); } catch {}
+  });
+
+  // ---------- Start ----------
+  renderHistory();
+  preview();
+  (async () => {
+    if (store.get("refresh")) {
+      try { await refresh(); showApp(); return; } catch {}
+    }
+    showLogin();
+  })();
+})();
+</script>
+</body>
+</html>

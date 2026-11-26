@@ -1,0 +1,17 @@
+name = "cinedor-admin"
+main = "cinedor-admin-worker.js"
+compatibility_date = "2024-09-01"
+
+[vars]
+ADMIN_UID = "xCbK5jp6PNf8UvTIE4mZYYLhpBj2"
+FIREBASE_PROJECT_ID = "cinedor-60aac"
+CONFIG_REPO = "contactbanglascreen-bit/Baizid-"
+CONFIG_PATH = "console/app-config.json"
+# Same order the app reads the settings in
+CONFIG_REFS = "main,ccr-c4b9015d-7d590g"
+# Put your panel address here once it is live, e.g. "https://contactbanglascreen-bit.github.io"
+ALLOWED_ORIGIN = "*"
+
+# Secrets (never put these in this file):
+#   wrangler secret put FCM_SERVICE_ACCOUNT   (paste the whole service-account JSON)
+#   wrangler secret put GITHUB_TOKEN
