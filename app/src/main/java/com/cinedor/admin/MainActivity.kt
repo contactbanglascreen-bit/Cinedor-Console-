@@ -317,7 +317,7 @@ private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: 
             when (tab) {
                 AdminTab.DASHBOARD -> DashboardScreen(store, api, cs, cloud, onGo = { tab = it })
                 AdminTab.FEEDBACK -> FeedbackScreen(cloud, store, api)
-                AdminTab.NOTIFY -> NotifyScreen(store, api)
+                AdminTab.NOTIFY -> NotifyScreen(store, api, cloud)
                 AdminTab.POPUPS -> PopupsScreen(cs)
                 AdminTab.SYSTEM -> SystemScreen(store, api, cs, onLogout = { confirmLogout = true })
             }
@@ -563,7 +563,7 @@ private fun HistoryRow(h: JSONObject) {
 // =============================================================== notifications
 
 @Composable
-private fun NotifyScreen(store: AdminStore, api: WorkerApi) {
+private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
@@ -743,6 +743,8 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi) {
                     scope.launch {
                         runCatching { api.send(title.trim(), body.trim(), image, link.trim()) }
                             .onSuccess {
+                                // Keep it in the app's 🔔 inbox too (needs the Firestore rules).
+                                runCatching { cloud.logNotification(title.trim(), body.trim(), image, link.trim()) }
                                 val arr = runCatching { JSONArray(store.historyJson()) }.getOrDefault(JSONArray())
                                 val next = JSONArray().put(
                                     JSONObject().put("title", title).put("body", body).put("image", image).put("at", System.currentTimeMillis())

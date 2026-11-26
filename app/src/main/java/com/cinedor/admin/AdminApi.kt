@@ -420,6 +420,19 @@ class CloudAdmin(private val auth: AdminAuth) {
         check(r)
     }
 
+    /** Saves a sent notification so it also appears in every phone's 🔔 inbox. */
+    suspend fun logNotification(title: String, body: String, image: String, link: String) = withContext(Dispatchers.IO) {
+        val now = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+            .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date())
+        val fields = JSONObject()
+            .put("title", JSONObject().put("stringValue", title))
+            .put("body", JSONObject().put("stringValue", body))
+            .put("image", JSONObject().put("stringValue", image))
+            .put("link", JSONObject().put("stringValue", link))
+            .put("at", JSONObject().put("timestampValue", now))
+        check(http("$docs/notifications", "POST", JSONObject().put("fields", fields).toString(), headers = bearer()))
+    }
+
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
         check(http("$docs/feedback/$id", "DELETE", headers = bearer()))
     }
