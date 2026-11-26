@@ -1,6 +1,7 @@
-# Cinedor Admin Panel
+# Cinedor Admin (Android app)
 
-Web admin panel for the Cinedor app:
+Android admin app for Cinedor. Every push to `main` builds a new APK and publishes it as a
+GitHub Release (`admin-N`); the installed app offers the update itself, release by release.
 
 - 🔔 **Notifications** – send a text or poster (big picture) push to every phone (FCM topic `all`)
 - ⚙️ **App settings** – Premium popup, announcement, Join us (Telegram/Facebook), share popup,
@@ -8,12 +9,13 @@ Web admin panel for the Cinedor app:
 - Login with Firebase Authentication; only the admin UID can use it
 
 ```
-index.html                      ← the panel (host on GitHub Pages)
+app/                            ← the admin Android app (Kotlin + Compose)
+.github/workflows/build-admin.yml ← builds the APK and publishes the update
 worker/cinedor-admin-worker.js  ← secure backend (Cloudflare Worker)
 worker/wrangler.toml            ← worker settings
 ```
 
-The private key and GitHub token live **only in the Worker as secrets** – never in this repo or the page.
+The private key and GitHub token live **only in the Worker as secrets** – never in this repo or the app.
 
 ## Setup (one time)
 
@@ -22,8 +24,8 @@ The private key and GitHub token live **only in the Worker as secrets** – neve
 2. The admin user (UID `xCbK5jp6PNf8UvTIE4mZYYLhpBj2`) must exist in Authentication → Users.
 3. Project settings → **Service accounts** → **Generate new private key** → a `.json` file downloads.
    Keep it secret. Do not upload it to GitHub or send it in chat.
-4. (If login says the key is blocked) Project settings → **Add app → Web** and use its `apiKey`
-   in the panel's Connection settings.
+4. (If login says the key is blocked) Project settings → **Add app → Web** and paste its `apiKey`
+   in the app's Connection settings.
 
 ### 2. Cloudflare Worker
 Dashboard way: Workers & Pages → Create → Worker → paste `worker/cinedor-admin-worker.js` → Deploy.
@@ -43,7 +45,6 @@ CLI way: `cd worker && npx wrangler deploy && npx wrangler secret put FCM_SERVIC
 
 Your existing API worker does not need any change.
 
-### 3. Panel
-Repo Settings → **Pages** → Deploy from branch `main` / root. Open the Pages address,
-put the Worker address in **Connection settings**, log in.
-Optionally set `ALLOWED_ORIGIN` in the Worker to your Pages address.
+### 3. Admin app
+Download `CinedorAdmin.apk` from the latest Release, install it, open **Connection settings**,
+paste the Worker address, then log in with the admin email and password.

@@ -1,0 +1,3 @@
+- Cinedor Admin app: send text and poster notifications to every phone
+- Edit Premium, Announcement, Join us, Share popup, Audio & Dubs, Maintenance and Force update
+- Updates itself release by release
