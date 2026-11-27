@@ -234,6 +234,25 @@ export default {
     const url = new URL(request.url);
     try {
       if (url.pathname === "/health") return json({ ok: true });
+      if (url.pathname === "/debug" && url.searchParams.get("player")) {
+        // Shows what the site's own video player page contains (where the video address is).
+        const pPath = url.searchParams.get("player");
+        const ref = url.searchParams.get("ref") || "/";
+        const { host } = await fetchWorking("/", true);
+        const pUrl = abs(pPath, host);
+        const r = await fetch(pUrl, { headers: { "User-Agent": UA, Referer: host + ref } });
+        const pHtml = await r.text();
+        const pick = (re, n = 20) => [...new Set(pHtml.match(re) || [])].slice(0, n);
+        const pd = pHtml.match(/window\.__PD2\s*=\s*(\{[\s\S]{0,1500})/);
+        return json({
+          playerUrl: pUrl, status: r.status, botCheck: isBotCheck(pHtml), length: pHtml.length,
+          pd2: pd ? pd[1].slice(0, 1500) : null,
+          videoUrls: pick(/https?:\/\/[^"'\s<>]+\.(?:mp4|m3u8|mkv)[^"'\s<>]*/gi),
+          scripts: pick(/<script[^>]*src=["'][^"']+["']/gi, 12),
+          hints: pick(/(?:file|src|source|url|hls|m3u8|mp4)["']?\s*[:=]\s*["'][^"']{6,200}["']/gi, 25),
+          head: pHtml.slice(0, 800),
+        });
+      }
       if (url.pathname === "/debug" && url.searchParams.get("path")) {
         // Shows how one title page is built, to find where its video links are.
         const path = url.searchParams.get("path");
