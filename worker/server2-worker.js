@@ -234,6 +234,26 @@ export default {
     const url = new URL(request.url);
     try {
       if (url.pathname === "/health") return json({ ok: true });
+      if (url.pathname === "/debug" && url.searchParams.get("path")) {
+        // Shows how one title page is built, to find where its video links are.
+        const path = url.searchParams.get("path");
+        const { html, host } = await fetchWorking(path);
+        const pick = (re, n = 25) => [...new Set(html.match(re) || [])].slice(0, n);
+        const links = [...html.matchAll(/<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]{0,120}?)<\/a>/gi)]
+          .map((m) => ({ href: m[1], text: decode(m[2].replace(/<[^>]+>/g, " ")).slice(0, 60) }))
+          .filter((l) => /watch|play|stream|download|embed|player|server|episode|ep[-_ ]?\d|season|link|drive|file/i.test(l.href + " " + l.text))
+          .slice(0, 40);
+        return json({
+          host,
+          iframes: pick(/<iframe[^>]+>/gi, 10),
+          videoUrls: pick(/https?:\/\/[^"'\s<>]+\.(?:mp4|m3u8|mkv)[^"'\s<>]*/gi),
+          dataAttrs: pick(/data-(?:src|url|link|file|video|embed|iframe|server|id)=["'][^"']{4,200}["']/gi, 30),
+          scripts: pick(/<script[^>]*src=["'][^"']+["']/gi, 15),
+          inlineHints: pick(/(?:__PD2|__NEXT_DATA__|playerData|sources|file|m3u8|embed)[^;\n]{0,160}/gi, 20),
+          buttons: pick(/<(?:button|a)[^>]*(?:watch|play|download)[^>]*>/gi, 20),
+          links,
+        });
+      }
       if (url.pathname === "/debug") {
         // Shows which addresses the worker found and what each one returns.
         const found = await discoverMirrors();
