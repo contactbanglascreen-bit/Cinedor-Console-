@@ -730,7 +730,7 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin, c
     // Titles from the Cinedor app itself (falls back to TMDB only if the app's server gives nothing).
     LaunchedEffect(query, feed, server) {
         loadingPosters = true
-        val s2 = cs.config?.optString("server2Url").orEmpty()
+        val s2 = cs.config?.optString("server2Url").orEmpty().split(',').first().trim()
         posters = if (server == 2) {
             if (query.isNotBlank()) delay(400)
             Server2Posters.load(s2, query)
@@ -1326,10 +1326,10 @@ private fun SystemScreen(store: AdminStore, api: WorkerApi, cs: ConfigState, tea
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text("Server 2", color = AdminColors.Text, fontWeight = FontWeight.ExtraBold)
-                            Text("Worker link for extra titles (leave empty = off)", color = AdminColors.Muted, fontSize = 12.sp)
+                            Text("Worker links, separated by commas — the first is used, the rest are backups", color = AdminColors.Muted, fontSize = 12.sp)
                         }
                     }
-                    AdminField("https://….workers.dev", s2, {
+                    AdminField("https://main.workers.dev, https://backup.workers.dev", s2, {
                         s2 = it.trim()
                         root.put("server2Url", s2)
                         cs.changed()
