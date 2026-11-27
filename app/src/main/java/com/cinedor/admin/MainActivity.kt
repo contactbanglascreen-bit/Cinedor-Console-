@@ -1185,6 +1185,23 @@ private fun SystemScreen(store: AdminStore, api: WorkerApi, cs: ConfigState, tea
                         cs.changed()
                     })
                 }
+                // Live TV: link of an .m3u playlist that replaces the channel list inside the app
+                var tvUrl by remember { mutableStateOf(root.optString("tvPlaylistUrl", "")) }
+                GlassCard(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconBadge(Icons.Rounded.SystemUpdate, Color(0xFFF87171), 44.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Live TV channels", color = AdminColors.Text, fontWeight = FontWeight.ExtraBold)
+                            Text(".m3u playlist link (leave empty = channels inside the app)", color = AdminColors.Muted, fontSize = 12.sp)
+                        }
+                    }
+                    AdminField("https://…/channels.m3u", tvUrl, {
+                        tvUrl = it.trim()
+                        root.put("tvPlaylistUrl", tvUrl)
+                        cs.changed()
+                    })
+                }
             }
         } else {
             GlassCard(Modifier.padding(16.dp).fillMaxWidth()) {
