@@ -189,32 +189,71 @@ function parseEpisodes(html, host) {
   return eps.sort((a, b) => a.season - b.season || a.episode - b.episode);
 }
 
+// Reads `window.__PD2 = {...}` from the site's player page (balanced braces, so nested data is kept).
+function readPD2(html) {
+  const at = html.search(/window\.__PD2\s*=\s*\{/);
+  if (at < 0) return null;
+  const start = html.indexOf("{", at);
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < html.length; i++) {
+    const c = html[i];
+    if (inStr) { if (esc) esc = false; else if (c === "\\") esc = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') inStr = true;
+    else if (c === "{") depth++;
+    else if (c === "}") { depth--; if (depth === 0) { try { return JSON.parse(html.slice(start, i + 1)); } catch (e) { return null; } } }
+  }
+  return null;
+}
+
+function pdStreams(o) {
+  const out = [];
+  if (o && typeof o.master === "string" && o.master.startsWith("http")) out.push({ url: o.master, quality: "Auto", type: "hls" });
+  if (o && typeof o.mp4 === "string" && o.mp4.startsWith("http")) out.push({ url: o.mp4, quality: "HD", type: "mp4" });
+  return out;
+}
+
 async function detail(path) {
   const { html, host } = await fetchWorking(path);
-  const title = decode((html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i) || html.match(/<title>([^<]+)/i) || [])[1] || "");
+  const title = decode((html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i) || html.match(/<title>([^<]+)/i) || [])[1] || "")
+    .replace(/\s*\|\s*MovieLinkBD.*$/i, "").replace(/\s+Download$/i, "");
   const poster = abs((html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)/i) || [])[1] || "", host);
   const synopsis = decode((html.match(/<meta[^>]+(?:property=["']og:description["']|name=["']description["'])[^>]+content=["']([^"']+)/i) || [])[1] || "");
-  const episodes = parseEpisodes(html, host);
 
-  let streams = collectStreams(html.match(/https?:\/\/[^"'\s<>]+\.(?:mp4|m3u8)[^"'\s<>]*/gi) || []);
+  let streams = [];
+  let episodes = [];
   let referer = host;
-  const iframe = (html.match(/<iframe[^>]*\bsrc=["']([^"']+)["']/i) || [])[1];
+  // The site's own player (an iframe like /p/xxxx) carries the video addresses in window.__PD2.
+  const iframe = (html.match(/<iframe[^>]*id=["']mlbdHdFrame["'][^>]*\bsrc=["']([^"']+)["']/i)
+    || html.match(/<iframe[^>]*\bsrc=["'](\/p\/[^"']+)["']/i)
+    || html.match(/<iframe[^>]*\bsrc=["']([^"']+)["']/i) || [])[1];
   if (iframe) {
     const pUrl = abs(iframe, host);
     try {
       const pRes = await fetch(pUrl, { headers: { "User-Agent": UA, Referer: host + path } });
       const pHtml = await pRes.text();
       referer = new URL(pUrl).origin;
-      const match = pHtml.match(/window\.__PD2\s*=\s*(\{[\s\S]*?\});/);
-      if (match) {
-        try { streams = streams.concat(collectStreams(JSON.parse(match[1]))); } catch (e) {}
+      const pd = readPD2(pHtml);
+      if (pd) {
+        streams = pdStreams(pd);
+        episodes = (Array.isArray(pd.episodes) ? pd.episodes : []).map((e, i) => ({
+          season: +e.season || 1,
+          episode: +e.number || i + 1,
+          title: String(e.label || `Episode ${+e.number || i + 1}`),
+          streams: pdStreams(e),
+        })).filter((e) => e.streams.length);
+        // A series' top-level address is usually its newest episode; keep it only for movies.
+        if (episodes.length && !streams.length) streams = episodes[0].streams;
       }
-      streams = streams.concat(collectStreams(pHtml.match(/https?:\/\/[^"'\s<>]+\.(?:mp4|m3u8)[^"'\s<>]*/gi) || []));
+      if (!streams.length) {
+        streams = collectStreams(pHtml.match(/https?:\/\/[^"'\s<>]+\.(?:mp4|m3u8)[^"'\s<>]*/gi) || []);
+      }
     } catch (e) {}
   }
+  if (!streams.length) streams = collectStreams(html.match(/https?:\/\/[^"'\s<>]+\.(?:mp4|m3u8)[^"'\s<>]*/gi) || []);
   const uniq = [];
   const seen = new Set();
   for (const s of streams) if (!seen.has(s.url)) { seen.add(s.url); uniq.push(s); }
+  episodes.sort((a, b) => a.season - b.season || a.episode - b.episode);
   return { title, poster, synopsis, referer, streams: uniq, episodes };
 }
 
@@ -224,7 +263,7 @@ function allowedStreamTarget(u) {
     const x = new URL(u);
     if (x.protocol !== "https:") return false;
     if (/^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(x.hostname)) return false;
-    return /\.(mp4|m3u8|ts|m4s|key)(\?|$)/i.test(x.pathname + (x.search ? "?" : "")) || /\/(hls|video|stream)/i.test(x.pathname);
+    return /\.(mp4|m3u8|ts|m4s|key)(\?|$)/i.test(x.pathname + (x.search ? "?" : "")) || /\/(hls|video|stream|m|vseg|p)\//i.test(x.pathname);
   } catch (e) { return false; }
 }
 
