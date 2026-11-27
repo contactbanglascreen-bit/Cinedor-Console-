@@ -250,18 +250,21 @@ export default {
       }
       if (url.pathname === "/home") {
         const { html, host } = await fetchWorking("/", true);
-        return json({ items: parseCards(html, host) }, 200, 600);
+        const items = parseCards(html, host);
+        return json({ items }, 200, items.length ? 600 : 0);
       }
       if (url.pathname === "/search") {
         const q = (url.searchParams.get("q") || "").trim();
         if (!q) return json({ items: [] });
         const { html, host } = await fetchWorking("/search?q=" + encodeURIComponent(q));
-        return json({ items: parseCards(html, host) }, 200, 600);
+        const items = parseCards(html, host);
+        return json({ items }, 200, items.length ? 600 : 0);
       }
       if (url.pathname === "/detail") {
         const path = url.searchParams.get("path") || "/";
         if (!path.startsWith("/")) return json({ error: "Bad path" }, 400);
-        return json(await detail(path), 200, 300);
+        const d = await detail(path);
+        return json(d, 200, d.streams.length || d.episodes.length ? 300 : 0);
       }
       if (url.pathname === "/stream") {
         const target = url.searchParams.get("url") || "";
