@@ -105,7 +105,10 @@ function abs(u, host) {
 function decode(s) {
   return String(s || "")
     .replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'")
-    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&ndash;/g, "–").replace(/&mdash;/g, "—").replace(/&nbsp;/g, " ").replace(/&hellip;/g, "…")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n)).replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
+    .replace(/\s+/g, " ").trim();
 }
 
 function parseCards(html, host) {
@@ -336,7 +339,7 @@ export default {
         const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10) || 1);
         const { html, host } = await fetchWorking(page > 1 ? `/page/${page}` : "/", page === 1);
         const items = parseCards(html, host);
-        const pages = [...html.matchAll(/\/page\/(\d+)/g)].map((m) => +m[1]);
+        const pages = [...html.matchAll(/\/page\/(\d+)/g)].map((m) => +m[1]).filter((n) => n < 20000);
         const maxPage = pages.length ? Math.max(page, ...pages) : page;
         return json({ page, maxPage, items }, 200, items.length ? 900 : 0);
       }
