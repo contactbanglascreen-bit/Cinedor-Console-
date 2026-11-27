@@ -42,7 +42,7 @@ async function getPage(url, ref) {
   const r = await fetch(url, {
     headers: { "User-Agent": UA, Referer: ref || url, Accept: "text/html,application/xhtml+xml" },
     redirect: "follow",
-    cf: { cacheTtl: 60, cacheEverything: true },
+    cf: { cacheTtl: 120, cacheEverything: true },
   });
   const html = await r.text();
   return { ok: r.ok && !isBotCheck(html), status: r.status, html, finalUrl: r.url, botCheck: isBotCheck(html) };
