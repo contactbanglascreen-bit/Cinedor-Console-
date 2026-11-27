@@ -1168,6 +1168,23 @@ private fun SystemScreen(store: AdminStore, api: WorkerApi, cs: ConfigState, tea
                         cs.changed()
                     }, number = true)
                 }
+                // Server 2: link of the extra content worker (worker/server2-worker.js)
+                var s2 by remember { mutableStateOf(root.optString("server2Url", "")) }
+                GlassCard(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconBadge(Icons.Rounded.SystemUpdate, Color(0xFF34D399), 44.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Server 2", color = AdminColors.Text, fontWeight = FontWeight.ExtraBold)
+                            Text("Worker link for extra titles (leave empty = off)", color = AdminColors.Muted, fontSize = 12.sp)
+                        }
+                    }
+                    AdminField("https://….workers.dev", s2, {
+                        s2 = it.trim()
+                        root.put("server2Url", s2)
+                        cs.changed()
+                    })
+                }
             }
         } else {
             GlassCard(Modifier.padding(16.dp).fillMaxWidth()) {
