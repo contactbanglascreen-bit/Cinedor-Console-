@@ -331,6 +331,15 @@ export default {
         const items = parseCards(html, host);
         return json({ items }, 200, items.length ? 600 : 0);
       }
+      if (url.pathname === "/list") {
+        // Every title, page by page (the site has hundreds of pages: /page/2, /page/3, ...).
+        const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10) || 1);
+        const { html, host } = await fetchWorking(page > 1 ? `/page/${page}` : "/", page === 1);
+        const items = parseCards(html, host);
+        const pages = [...html.matchAll(/\/page\/(\d+)/g)].map((m) => +m[1]);
+        const maxPage = pages.length ? Math.max(page, ...pages) : page;
+        return json({ page, maxPage, items }, 200, items.length ? 900 : 0);
+      }
       if (url.pathname === "/search") {
         const q = (url.searchParams.get("q") || "").trim();
         if (!q) return json({ items: [] });
