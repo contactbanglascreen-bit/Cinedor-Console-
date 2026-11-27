@@ -99,6 +99,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -144,7 +146,7 @@ class MainActivity : ComponentActivity() {
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .background(Brush.verticalGradient(listOf(Color(0xFF1A0B0E), AdminColors.Bg, AdminColors.Bg)))
+                        .auroraBackground()
                 ) {
                     var loggedIn by remember { mutableStateOf(auth.isLoggedIn) }
                     if (loggedIn) {
@@ -166,7 +168,8 @@ private fun LogoMark(size: Int = 44) {
     Box(
         modifier = Modifier
             .size(size.dp)
-            .clip(RoundedCornerShape((size / 3.4f).dp))
+            .shadow(14.dp, RoundedCornerShape((size / 3.2f).dp), ambientColor = AdminColors.Red, spotColor = AdminColors.Red)
+            .clip(RoundedCornerShape((size / 3.2f).dp))
             .background(Color.White),
         contentAlignment = Alignment.Center
     ) {
@@ -260,58 +263,52 @@ private enum class AdminTab(val label: String, val icon: ImageVector, val outlin
     SYSTEM("System", Icons.Filled.FTune, Icons.Outlined.OTune)
 }
 
-/** Floating glass bottom bar: the active tab grows into a red pill with a filled icon and its name. */
+/**
+ * Floating capsule bottom bar: the active tab becomes a glowing red-violet pill with its icon and
+ * name; the others show just their icon.
+ */
 @Composable
 private fun AdminBottomBar(current: AdminTab, tabs: List<AdminTab>, onSelect: (AdminTab) -> Unit) {
     Box(
         Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(26.dp))
-                .background(Brush.verticalGradient(listOf(Color(0xFF221A1D), Color(0xFF161113))))
-                .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.03f))), RoundedCornerShape(26.dp))
-                .padding(horizontal = 8.dp, vertical = 8.dp),
+                .shadow(24.dp, CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
+                .clip(CircleShape)
+                .background(Brush.verticalGradient(listOf(Color(0xF01A1D33), Color(0xF00E1020))))
+                .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.20f), Color.White.copy(alpha = 0.04f))), CircleShape)
+                .padding(6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             tabs.forEach { t ->
                 val sel = t == current
-                Column(
+                Row(
                     Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(18.dp))
-                        .clickable { onSelect(t) }
-                        .padding(vertical = 4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .weight(if (sel) 1.9f else 1f)
+                        .animateContentSize()
+                        .height(48.dp)
+                        .clip(CircleShape)
+                        .background(if (sel) AdminColors.redBrush else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)))
+                        .clickable { onSelect(t) },
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        Modifier
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(if (sel) AdminColors.redBrush else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)))
-                            .animateContentSize()
-                            .padding(horizontal = if (sel) 18.dp else 10.dp, vertical = 6.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            if (sel) t.icon else t.outline,
-                            contentDescription = t.label,
-                            tint = if (sel) Color.White else AdminColors.Muted,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        t.label,
-                        color = if (sel) Color.White else AdminColors.Muted,
-                        fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
-                        fontSize = 11.sp,
-                        maxLines = 1
+                    Icon(
+                        if (sel) t.icon else t.outline,
+                        contentDescription = t.label,
+                        tint = if (sel) Color.White else AdminColors.Muted,
+                        modifier = Modifier.size(22.dp)
                     )
+                    if (sel) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(t.label, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                    }
                 }
             }
         }
@@ -364,19 +361,23 @@ private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: 
     }
 
     Column(Modifier.fillMaxSize()) {
-        // Top bar
+        // Top bar: logo, page name and round glass buttons
         Row(
-            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(start = 18.dp, end = 8.dp, top = 8.dp, bottom = 6.dp),
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(start = 18.dp, end = 14.dp, top = 10.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            LogoMark(38)
-            Spacer(Modifier.width(10.dp))
+            LogoMark(42)
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(tab.label, color = AdminColors.Text, fontWeight = FontWeight.Black, fontSize = 19.sp)
-                Text(if (store.isAdmin) "Cinedor Admin" else "Moderator · " + store.displayName.ifBlank { store.email }, color = AdminColors.Muted, fontSize = 11.5.sp)
+                Text(
+                    if (store.isAdmin) "CINEDOR ADMIN" else "MODERATOR",
+                    color = AdminColors.RedBright, fontWeight = FontWeight.Bold, fontSize = 10.5.sp, letterSpacing = 1.6.sp
+                )
+                Text(tab.label, color = AdminColors.Text, fontWeight = FontWeight.Black, fontSize = 22.sp)
             }
-            IconButton(onClick = { load() }) { Icon(Icons.Rounded.Refresh, contentDescription = "Reload", tint = AdminColors.Muted) }
-            IconButton(onClick = { confirmLogout = true }) { Icon(Icons.Rounded.Logout, contentDescription = "Log out", tint = AdminColors.Muted) }
+            TopRoundButton(Icons.Rounded.Refresh, "Reload") { load() }
+            Spacer(Modifier.width(8.dp))
+            TopRoundButton(Icons.Rounded.Logout, "Log out") { confirmLogout = true }
         }
 
         Box(Modifier.weight(1f)) {
@@ -394,9 +395,10 @@ private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: 
                     Modifier
                         .padding(12.dp)
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(Color(0xFF241A1D))
-                        .border(1.dp, AdminColors.Red.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
+                        .shadow(20.dp, RoundedCornerShape(24.dp), ambientColor = AdminColors.Red, spotColor = AdminColors.Red)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Brush.verticalGradient(listOf(Color(0xFA1C1F38), Color(0xFA111325))))
+                        .border(1.dp, AdminColors.Red.copy(alpha = 0.55f), RoundedCornerShape(24.dp))
                         .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -459,6 +461,17 @@ private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: 
     }
 }
 
+@Composable
+private fun TopRoundButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Box(
+        Modifier.size(40.dp).clip(CircleShape)
+            .background(Color.White.copy(alpha = 0.08f))
+            .border(1.dp, AdminColors.Line, CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { Icon(icon, contentDescription = label, tint = AdminColors.Text, modifier = Modifier.size(19.dp)) }
+}
+
 /** Slide-up animation called outside any Row/Column scope. */
 @Composable
 private fun SlideUp(visible: Boolean, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
@@ -491,9 +504,15 @@ private fun DashboardScreen(store: AdminStore, api: WorkerApi, cs: ConfigState, 
             Modifier
                 .padding(horizontal = 16.dp, vertical = 6.dp)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(26.dp))
-                .background(Brush.linearGradient(listOf(Color(0xFFFF3B45), Color(0xFFB0101A), Color(0xFF4A060B))))
-                .padding(20.dp)
+                .shadow(26.dp, RoundedCornerShape(30.dp), ambientColor = AdminColors.Red, spotColor = AdminColors.Violet)
+                .clip(RoundedCornerShape(30.dp))
+                .background(Brush.linearGradient(listOf(Color(0xFFFF3D5E), Color(0xFFD9137A), Color(0xFF6D28D9))))
+                .drawBehind {
+                    // Decorative light circles
+                    drawCircle(Color.White.copy(alpha = 0.10f), radius = size.height * 0.75f, center = androidx.compose.ui.geometry.Offset(size.width * 0.95f, size.height * 0.05f))
+                    drawCircle(Color.White.copy(alpha = 0.07f), radius = size.height * 0.45f, center = androidx.compose.ui.geometry.Offset(size.width * 0.75f, size.height * 1.05f))
+                }
+                .padding(22.dp)
         ) {
             Column {
                 Text(greet + " 👋", color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)

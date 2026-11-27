@@ -4,6 +4,7 @@ plugins {
 }
 
 android {
+  testOptions { unitTests.isIncludeAndroidResources = true }
   namespace = "com.cinedor.admin"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
@@ -47,6 +48,9 @@ android {
 }
 
 dependencies {
+  testImplementation(libs.robolectric)
+  testImplementation("junit:junit:4.13.2")
+  testImplementation("androidx.test:core:1.6.1")
   implementation(platform(libs.androidx.compose.bom))
   implementation(libs.androidx.activity.compose)
   implementation(libs.androidx.compose.material.icons.core)

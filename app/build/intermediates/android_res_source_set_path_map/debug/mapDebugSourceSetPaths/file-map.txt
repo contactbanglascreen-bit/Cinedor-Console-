@@ -1,0 +1,7 @@
+com.cinedor.admin.app-pngs-0 /home/user/cinedor-console-/app/build/generated/res/pngs/debug
+com.cinedor.admin.app-updated_navigation_xml-1 /home/user/cinedor-console-/app/build/generated/updated_navigation_xml/debug
+com.cinedor.admin.app-packageDebugResources-2 /home/user/cinedor-console-/app/build/intermediates/incremental/debug/packageDebugResources/merged.dir
+com.cinedor.admin.app-packageDebugResources-3 /home/user/cinedor-console-/app/build/intermediates/incremental/debug/packageDebugResources/stripped.dir
+com.cinedor.admin.app-debug-4 /home/user/cinedor-console-/app/build/intermediates/merged_res/debug/mergeDebugResources
+com.cinedor.admin.app-debug-5 /home/user/cinedor-console-/app/src/debug/res
+com.cinedor.admin.app-main-6 /home/user/cinedor-console-/app/src/main/res

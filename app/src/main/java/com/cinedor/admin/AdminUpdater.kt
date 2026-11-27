@@ -235,15 +235,17 @@ fun AdminUpdatePrompt() {
 }
 
 object AdminColors {
-    val Bg = Color(0xFF0B0809)
-    val Card = Color(0xFF161113)
-    val Field = Color(0xFF1E171A)
-    val Line = Color(0xFF2E2327)
-    val Text = Color(0xFFF6EEF0)
-    val Muted = Color(0xFFA8979C)
-    val Red = Color(0xFFE50914)
-    val RedBright = Color(0xFFFF3B45)
-    val RedDark = Color(0xFF8A0710)
-    val Green = Color(0xFF22C55E)
-    val redBrush get() = Brush.linearGradient(listOf(RedBright, RedDark))
+    // "Aurora Night": deep navy with red-to-violet light.
+    val Bg = Color(0xFF070912)
+    val Card = Color(0xFF13162A)
+    val Field = Color(0x1AFFFFFF)
+    val Line = Color(0x26FFFFFF)
+    val Text = Color(0xFFF4F5FB)
+    val Muted = Color(0xFF959BB5)
+    val Red = Color(0xFFFF2E55)
+    val RedBright = Color(0xFFFF5C7C)
+    val RedDark = Color(0xFF7C3AED)
+    val Violet = Color(0xFF8B5CF6)
+    val Green = Color(0xFF34D399)
+    val redBrush get() = Brush.linearGradient(listOf(Color(0xFFFF3D5E), Color(0xFFE11D74), Color(0xFF7C3AED)))
 }

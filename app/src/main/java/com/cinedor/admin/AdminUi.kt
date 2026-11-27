@@ -28,6 +28,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -40,7 +42,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Glassy dark card used across the admin app. */
+/** Frosted glass card used across the admin app (light edge on top, soft see-through fill). */
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
@@ -48,22 +50,36 @@ fun GlassCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val shape = RoundedCornerShape(22.dp)
+    val shape = RoundedCornerShape(24.dp)
     Column(
         modifier = modifier
             .clip(shape)
-            .background(Brush.verticalGradient(listOf(Color(0xFF1C1518), Color(0xFF141012))))
-            .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.10f), Color.White.copy(alpha = 0.03f))), shape)
+            .background(Brush.verticalGradient(listOf(Color(0x1FFFFFFF), Color(0x0AFFFFFF))))
+            .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.22f), Color.White.copy(alpha = 0.04f))), shape)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(padding),
         content = content
     )
 }
 
+/** Soft colored light behind the whole app. */
+fun Modifier.auroraBackground(): Modifier = this
+    .background(AdminColors.Bg)
+    .drawBehind {
+        fun glow(c: Color, x: Float, y: Float, r: Float) = drawCircle(
+            Brush.radialGradient(listOf(c, Color.Transparent), center = androidx.compose.ui.geometry.Offset(size.width * x, size.height * y), radius = size.minDimension * r),
+            radius = size.minDimension * r,
+            center = androidx.compose.ui.geometry.Offset(size.width * x, size.height * y)
+        )
+        glow(Color(0x55FF2E55), 0.05f, 0.02f, 0.95f)
+        glow(Color(0x447C3AED), 0.98f, 0.12f, 0.9f)
+        glow(Color(0x2A2563EB), 0.2f, 0.85f, 1.0f)
+    }
+
 @Composable
 fun SectionTitle(title: String, subtitle: String? = null, modifier: Modifier = Modifier) {
     Column(modifier.padding(horizontal = 18.dp, vertical = 8.dp)) {
-        Text(title, color = AdminColors.Text, fontWeight = FontWeight.Black, fontSize = 18.sp)
+        Text(title, color = AdminColors.Text, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, letterSpacing = 0.2.sp)
         if (subtitle != null) Text(subtitle, color = AdminColors.Muted, fontSize = 12.5.sp)
     }
 }
@@ -126,7 +142,8 @@ fun PrimaryButton(text: String, modifier: Modifier = Modifier, busy: Boolean = f
     Box(
         modifier = modifier
             .height(52.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .shadow(12.dp, RoundedCornerShape(18.dp), ambientColor = AdminColors.Red, spotColor = AdminColors.Red)
+            .clip(RoundedCornerShape(18.dp))
             .background(AdminColors.redBrush)
             .clickable(enabled = !busy, onClick = onClick),
         contentAlignment = Alignment.Center
@@ -147,9 +164,9 @@ fun SecondaryButton(text: String, modifier: Modifier = Modifier, icon: ImageVect
     Box(
         modifier = modifier
             .height(52.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color.White.copy(alpha = 0.05f))
-            .border(1.dp, AdminColors.Line, RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color.White.copy(alpha = 0.08f))
+            .border(1.dp, AdminColors.Line, RoundedCornerShape(18.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -202,7 +219,7 @@ fun AdminField(
             }
         ),
         colors = adminFieldColors(),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
     )
 }
@@ -236,8 +253,8 @@ fun Chip(text: String, selected: Boolean = false, onClick: () -> Unit) {
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier
             .clip(CircleShape)
-            .background(if (selected) AdminColors.Red else AdminColors.Field)
-            .border(1.dp, if (selected) AdminColors.Red else AdminColors.Line, CircleShape)
+            .background(if (selected) AdminColors.redBrush else Brush.linearGradient(listOf(AdminColors.Field, AdminColors.Field)))
+            .border(1.dp, if (selected) Color.Transparent else AdminColors.Line, CircleShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 13.dp, vertical = 8.dp)
     )

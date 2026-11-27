@@ -1,0 +1,10 @@
+R_DEF: Internal format may change without notice
+local
+color cinedor_icon_bg
+drawable cinedor_logo
+drawable ic_launcher_logo_fg
+drawable ic_launcher_logo_mono
+mipmap ic_launcher
+mipmap ic_launcher_round
+string app_name
+style Theme.CinedorAdmin
