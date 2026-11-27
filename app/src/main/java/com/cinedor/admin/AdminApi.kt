@@ -748,3 +748,40 @@ class TeamAdmin(private val store: AdminStore, private val auth: AdminAuth) {
 
     suspend fun deleteCode(code: String) = withContext(Dispatchers.IO) { ok(http("$docs/codes/$code", "DELETE", headers = bearer())) }
 }
+
+
+/** Titles from Server 2 (the user's own worker set as "server2Url" in System settings). */
+object Server2Posters {
+    private val http = okhttp3.OkHttpClient.Builder()
+        .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(25, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+
+    suspend fun load(base: String, query: String): List<PosterItem> = withContext(Dispatchers.IO) {
+        if (!base.startsWith("https://")) return@withContext emptyList()
+        val path = if (query.isBlank()) "/home" else "/search?q=" + URLEncoder.encode(query.trim(), "UTF-8")
+        runCatching {
+            http.newCall(okhttp3.Request.Builder().url(base.trimEnd('/') + path).build()).execute().use { r ->
+                val arr = JSONObject(r.body?.string().orEmpty()).optJSONArray("items") ?: return@use emptyList()
+                (0 until arr.length()).mapNotNull { i ->
+                    val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                    val p = o.optString("path")
+                    val t = o.optString("title")
+                    if (p.isBlank() || t.isBlank()) return@mapNotNull null
+                    val series = p.startsWith("/series/") || p.startsWith("/drama/") || p.startsWith("/anime/")
+                    PosterItem(
+                        id = p.hashCode().toLong(),
+                        title = t,
+                        year = Regex("(19|20)\\d{2}").find(t)?.value.orEmpty(),
+                        type = if (series) "Series" else "Movie",
+                        poster = o.optString("poster"),
+                        backdrop = o.optString("poster"),
+                        overview = "",
+                        rating = 0.0,
+                        cid = p, src = "movielinkbd", path = p
+                    )
+                }.distinctBy { it.id }
+            }
+        }.getOrDefault(emptyList())
+    }
+}

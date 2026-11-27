@@ -673,6 +673,32 @@ private fun HistoryRow(h: JSONObject) {
 
 // =============================================================== notifications
 
+/** Channels offered as one-tap choices for Live TV notifications (any name can be typed too). */
+private val TV_CHANNEL_SUGGESTIONS = listOf(
+    "T Sports", "Gazi TV", "Ekhon TV", "DBC News", "ATN Bangla", "NTV",
+    "RTV", "Maasranga TV", "Bangla Vision", "Boishakhi TV", "Duronto TV", "Channel S",
+    "Ekushey TV", "Green TV", "Ananda TV", "Nexus TV", "Zee Bangla", "Star Jalsha HD",
+    "Sky Sports Premier League", "TNT Sports 1", "BBC News", "Sony Aath", "Colors Bangla", "ATN Bangla UK"
+)
+
+private data class AppPage(val key: String, val label: String, val title: String, val body: String)
+
+/** App pages a notification can open (cinedor://open?page=…). */
+private val APP_PAGES = listOf(
+    AppPage("home", "🏠 Home", "🔥 আজকের সেরা মুভি", "Cinedor খুলে দেখুন নতুন কী এসেছে।"),
+    AppPage("explore", "🧭 Explore", "🧭 নতুন কিছু খুঁজুন", "হাজারো মুভি আর সিরিজ — ক্যাটাগরি ধরে দেখুন।"),
+    AppPage("tv", "📡 Live TV", "📡 Live TV এখন Cinedor-এ", "বাংলাদেশ, ভারত আর খেলার চ্যানেল — 24/7 ফ্রি।"),
+    AppPage("shorts", "▶ Shorts", "▶ নতুন Shorts", "ছোট ছোট মজার ক্লিপ দেখুন।"),
+    AppPage("mylist", "🔖 My List", "🔖 আপনার লিস্ট", "সেভ করা মুভিগুলো দেখা বাকি আছে!"),
+    AppPage("ai", "✨ Cinedor Ai", "✨ মুভি খুঁজে পাচ্ছেন না?", "Cinedor Ai-কে গল্পটা বলুন, সে খুঁজে দেবে।"),
+    AppPage("history", "🕘 History", "▶ যেখানে থেমেছিলেন", "আপনার দেখা মুভিটা শেষ করুন।"),
+    AppPage("downloads", "⬇ Downloads", "⬇ ডাউনলোড করুন, অফলাইনে দেখুন", "নেট ছাড়াও মুভি দেখুন।"),
+    AppPage("premium", "👑 Premium", "👑 Cinedor Premium", "বিজ্ঞাপন ছাড়া দেখুন — এখনই Premium নিন।"),
+    AppPage("settings", "⚙ Settings", "⚙ নতুন সেটিংস", "অ্যাপটা নিজের মতো সাজিয়ে নিন।"),
+    AppPage("feedback", "💬 Feedback", "💬 আপনার মতামত দিন", "কোন মুভি চান? আমাদের জানান।"),
+    AppPage("me", "👤 Me", "👤 আপনার প্রোফাইল", "Cinedor-এ আপনার সব কিছু এক জায়গায়।")
+)
+
 @Composable
 private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin, cs: ConfigState, repo: ConfigRepo) {
     val context = LocalContext.current
@@ -681,6 +707,10 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin, c
     var feed by remember { mutableStateOf("trending") }
     var popupConfirm by remember { mutableStateOf(false) }
     var collection by remember { mutableStateOf(false) }
+    // What a tap on the notification opens: a title, a TV channel, an app page, search or a web page.
+    var target by remember { mutableStateOf("title") }
+    var server by remember { mutableIntStateOf(1) }
+    var targetText by remember { mutableStateOf("") }
     var picks by remember { mutableStateOf<List<PosterItem>>(emptyList()) }
     var popupBusy by remember { mutableStateOf(false) }
     var posters by remember { mutableStateOf<List<PosterItem>>(emptyList()) }
@@ -698,9 +728,13 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin, c
     val history = remember(historyTick) { runCatching { JSONArray(store.historyJson()) }.getOrDefault(JSONArray()) }
 
     // Titles from the Cinedor app itself (falls back to TMDB only if the app's server gives nothing).
-    LaunchedEffect(query, feed) {
+    LaunchedEffect(query, feed, server) {
         loadingPosters = true
-        posters = if (query.isBlank()) {
+        val s2 = cs.config?.optString("server2Url").orEmpty()
+        posters = if (server == 2) {
+            if (query.isNotBlank()) delay(400)
+            Server2Posters.load(s2, query)
+        } else if (query.isBlank()) {
             val list = if (feed == "new") CinedorCatalog.latest() else CinedorCatalog.trending()
             list.ifEmpty { PosterSource.trending() }
         } else {
@@ -728,66 +762,145 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin, c
     }
 
     Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
-        SectionTitle("1 · Pick a poster", if (collection) "Tap up to 10 titles — 3 show in a row, all 10 when opened" else "Tap any title — the notification fills itself")
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Chip("One title", !collection) { collection = false; picks = emptyList() }
-            Chip("Collection · up to 10", collection) { collection = true; selected = null; picks = emptyList() }
-        }
-        Box(Modifier.padding(horizontal = 16.dp)) {
-            AdminField("Search movies & series", query, { query = it }, leading = Icons.Rounded.Search)
-        }
-        Spacer(Modifier.height(6.dp))
-        if (loadingPosters && posters.isEmpty()) {
-            Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = AdminColors.Red, strokeWidth = 2.dp)
+        SectionTitle("0 · Tap opens", "Anything in the app: a title, a live channel, a page, search or a website")
+        Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Chip("🎬 Movie / Series", target == "title") { target = "title"; link = selected?.appLink().orEmpty() }
+                Chip("📡 Live TV", target == "tv") { target = "tv"; collection = false; picks = emptyList(); selected = null; image = ""; link = "" }
             }
-        } else {
-            if (query.isBlank()) {
-                Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Chip("🔥 Trending in app", feed == "trending") { feed = "trending" }
-                    Chip("🆕 New in 24h", feed == "new") { feed = "new" }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Chip("📱 App page", target == "page") { target = "page"; collection = false; picks = emptyList(); selected = null; image = ""; link = "" }
+                Chip("🔍 Search", target == "search") { target = "search"; collection = false; picks = emptyList(); selected = null; link = "" }
+                Chip("🌐 Website", target == "web") { target = "web"; collection = false; picks = emptyList(); selected = null; link = "" }
+            }
+        }
+        fun enc(v: String) = java.net.URLEncoder.encode(v, "UTF-8")
+        when (target) {
+            "title" -> {
+            SectionTitle("1 · Pick a poster", if (collection) "Tap up to 10 titles — 3 show in a row, all 10 when opened" else "Tap any title — the notification fills itself")
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Chip("One title", !collection) { collection = false; picks = emptyList() }
+                Chip("Collection · up to 10", collection) { collection = true; selected = null; picks = emptyList() }
+            }
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Chip("Server 1", server == 1) { server = 1 }
+                Chip("Server 2", server == 2) { server = 2 }
+            }
+            Box(Modifier.padding(horizontal = 16.dp)) {
+                AdminField("Search movies & series", query, { query = it }, leading = Icons.Rounded.Search)
+            }
+            Spacer(Modifier.height(6.dp))
+            if (loadingPosters && posters.isEmpty()) {
+                Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = AdminColors.Red, strokeWidth = 2.dp)
                 }
             } else {
-                Text(
-                    "Results for “$query”",
-                    color = AdminColors.Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp)
-                )
-            }
-            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(posters, key = { it.type + it.id }) { p ->
-                    val sel = if (collection) picks.any { it.id == p.id } else selected?.id == p.id
-                    Column(Modifier.width(116.dp).clickable { pick(p) }) {
-                        Box {
-                            AsyncImage(
-                                model = p.poster,
-                                contentDescription = p.title,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .aspectRatio(2f / 3f)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .border(if (sel) 3.dp else 1.dp, if (sel) AdminColors.Red else Color.White.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
-                            )
-                            if (p.rating > 0) {
-                                Row(
-                                    Modifier.padding(6.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.6f)).padding(horizontal = 6.dp, vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(Icons.Rounded.Star, contentDescription = null, tint = Color(0xFFF5C451), modifier = Modifier.size(11.dp))
-                                    Text(" %.1f".format(p.rating), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                if (query.isBlank() && server == 1) {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Chip("🔥 Trending in app", feed == "trending") { feed = "trending" }
+                        Chip("🆕 New in 24h", feed == "new") { feed = "new" }
+                    }
+                } else if (query.isNotBlank()) {
+                    Text(
+                        "Results for “$query”",
+                        color = AdminColors.Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp)
+                    )
+                }
+                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(posters, key = { it.type + it.id }) { p ->
+                        val sel = if (collection) picks.any { it.id == p.id } else selected?.id == p.id
+                        Column(Modifier.width(116.dp).clickable { pick(p) }) {
+                            Box {
+                                AsyncImage(
+                                    model = p.poster,
+                                    contentDescription = p.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(2f / 3f)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .border(if (sel) 3.dp else 1.dp, if (sel) AdminColors.Red else Color.White.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
+                                )
+                                if (p.rating > 0) {
+                                    Row(
+                                        Modifier.padding(6.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.6f)).padding(horizontal = 6.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Rounded.Star, contentDescription = null, tint = Color(0xFFF5C451), modifier = Modifier.size(11.dp))
+                                        Text(" %.1f".format(p.rating), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                if (sel) {
+                                    Box(
+                                        Modifier.align(Alignment.Center).size(38.dp).clip(CircleShape).background(AdminColors.Red),
+                                        contentAlignment = Alignment.Center
+                                    ) { Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = Color.White) }
                                 }
                             }
-                            if (sel) {
-                                Box(
-                                    Modifier.align(Alignment.Center).size(38.dp).clip(CircleShape).background(AdminColors.Red),
-                                    contentAlignment = Alignment.Center
-                                ) { Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = Color.White) }
+                            Spacer(Modifier.height(6.dp))
+                            Text(p.title, color = AdminColors.Text, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${p.type} · ${p.year}", color = AdminColors.Muted, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+            }
+            "tv" -> {
+                SectionTitle("1 · Pick a channel", "Tapping the notification starts this channel")
+                GlassCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+                    AdminField("Channel name", targetText, { v ->
+                        targetText = v
+                        link = if (v.isBlank()) "" else "cinedor://tv?t=" + enc(v.trim())
+                    }, leading = Icons.Rounded.Search)
+                    Spacer(Modifier.height(6.dp))
+                    TV_CHANNEL_SUGGESTIONS.chunked(3).forEach { row ->
+                        Row(Modifier.padding(vertical = 3.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            row.forEach { name ->
+                                Chip(name, targetText == name) {
+                                    targetText = name
+                                    link = "cinedor://tv?t=" + enc(name)
+                                    title = "📡 $name এখন লাইভ"
+                                    body = "Cinedor-এ এখনই $name দেখুন — ফ্রি, 24/7।"
+                                }
                             }
                         }
-                        Spacer(Modifier.height(6.dp))
-                        Text(p.title, color = AdminColors.Text, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${p.type} · ${p.year}", color = AdminColors.Muted, fontSize = 11.sp)
                     }
+                }
+            }
+            "page" -> {
+                SectionTitle("1 · Pick a page", "Tapping the notification opens this part of the app")
+                GlassCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+                    APP_PAGES.chunked(3).forEach { row ->
+                        Row(Modifier.padding(vertical = 3.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            row.forEach { pg ->
+                                Chip(pg.label, targetText == pg.key) {
+                                    targetText = pg.key
+                                    link = "cinedor://open?page=" + pg.key
+                                    title = pg.title
+                                    body = pg.body
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            "search" -> {
+                SectionTitle("1 · What to search", "Tapping the notification shows these search results")
+                GlassCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+                    AdminField("Search words (e.g. Gopal Bhar)", targetText, { v ->
+                        targetText = v
+                        link = if (v.isBlank()) "" else "cinedor://search?q=" + enc(v.trim())
+                        if (v.isNotBlank()) { title = "🔍 ${v.trim()} — সব পর্ব এখন Cinedor-এ"; body = "ট্যাপ করে সব দেখুন।" }
+                    }, leading = Icons.Rounded.Search)
+                }
+            }
+            "web" -> {
+                SectionTitle("1 · Website link", "Tapping the notification opens this page in the browser")
+                GlassCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+                    AdminField("https://…", targetText, { v ->
+                        targetText = v.trim()
+                        link = if (v.trim().startsWith("http")) v.trim() else ""
+                    })
                 }
             }
         }
@@ -813,7 +926,14 @@ private fun NotifyScreen(store: AdminStore, api: WorkerApi, cloud: CloudAdmin, c
                     selected?.let { p -> image = if (it) p.backdrop else p.poster }
                 }
             }
-            AdminField("When tapped, open (search in app)", link, { link = it })
+            AdminField(
+                when (target) {
+                    "title" -> "When tapped, open (filled from the poster)"
+                    "web" -> "Website link"
+                    else -> "App link (filled for you)"
+                },
+                link, { link = it.trim() }
+            )
         }
 
         SectionTitle("3 · Preview")
