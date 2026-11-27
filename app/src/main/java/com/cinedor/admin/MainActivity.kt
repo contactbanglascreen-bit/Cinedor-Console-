@@ -99,6 +99,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.layout.onSizeChanged
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -279,9 +283,7 @@ private fun AdminBottomBar(current: AdminTab, tabs: List<AdminTab>, onSelect: (A
             Modifier
                 .fillMaxWidth()
                 .shadow(24.dp, CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
-                .clip(CircleShape)
-                .background(Brush.verticalGradient(listOf(Color(0xF01A1D33), Color(0xF00E1020))))
-                .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.20f), Color.White.copy(alpha = 0.04f))), CircleShape)
+                .liquidGlass(CircleShape)
                 .padding(6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
@@ -293,8 +295,7 @@ private fun AdminBottomBar(current: AdminTab, tabs: List<AdminTab>, onSelect: (A
                         .weight(if (sel) 1.9f else 1f)
                         .animateContentSize()
                         .height(48.dp)
-                        .clip(CircleShape)
-                        .background(if (sel) AdminColors.redBrush else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)))
+                        .then(if (sel) Modifier.glassAccent(CircleShape) else Modifier.clip(CircleShape))
                         .clickable { onSelect(t) },
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
@@ -360,27 +361,12 @@ private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: 
         runCatching { auth.checkSession() }.onFailure { if (it is AdminException) onLogout() }
     }
 
-    Column(Modifier.fillMaxSize()) {
-        // Top bar: logo, page name and round glass buttons
-        Row(
-            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(start = 18.dp, end = 14.dp, top = 10.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            LogoMark(42)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    if (store.isAdmin) "CINEDOR ADMIN" else "MODERATOR",
-                    color = AdminColors.RedBright, fontWeight = FontWeight.Bold, fontSize = 10.5.sp, letterSpacing = 1.6.sp
-                )
-                Text(tab.label, color = AdminColors.Text, fontWeight = FontWeight.Black, fontSize = 22.sp)
-            }
-            TopRoundButton(Icons.Rounded.Refresh, "Reload") { load() }
-            Spacer(Modifier.width(8.dp))
-            TopRoundButton(Icons.Rounded.Logout, "Log out") { confirmLogout = true }
-        }
-
-        Box(Modifier.weight(1f)) {
+    val haze = remember { HazeState() }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    var topBarHeight by remember { mutableStateOf(96.dp) }
+    CompositionLocalProvider(AdminGlass.LocalHaze provides haze) {
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().padding(top = topBarHeight).hazeSource(haze)) {
             when (tab) {
                 AdminTab.DASHBOARD -> DashboardScreen(store, api, cs, cloud, onGo = { tab = it })
                 AdminTab.FEEDBACK -> FeedbackScreen(cloud, store, api)
@@ -390,15 +376,13 @@ private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: 
             }
 
             // Floating "publish changes" bar whenever settings were edited
-            SlideUp(visible = cs.dirty, modifier = Modifier.align(Alignment.BottomCenter)) {
+            SlideUp(visible = cs.dirty, modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 72.dp)) {
                 Row(
                     Modifier
                         .padding(12.dp)
                         .fillMaxWidth()
                         .shadow(20.dp, RoundedCornerShape(24.dp), ambientColor = AdminColors.Red, spotColor = AdminColors.Red)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(Brush.verticalGradient(listOf(Color(0xFA1C1F38), Color(0xFA111325))))
-                        .border(1.dp, AdminColors.Red.copy(alpha = 0.55f), RoundedCornerShape(24.dp))
+                        .liquidGlass(RoundedCornerShape(24.dp))
                         .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -422,7 +406,34 @@ private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: 
                 AdminTab.SYSTEM -> store.isAdmin
             }
         }
-        AdminBottomBar(tab, tabs) { tab = it }
+        Box(Modifier.align(Alignment.TopCenter)) {
+        // Top bar: logo, page name and round glass buttons
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .liquidGlass(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
+                .statusBarsPadding()
+                .onSizeChanged { topBarHeight = with(density) { it.height.toDp() } }
+                .padding(start = 18.dp, end = 14.dp, top = 10.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            LogoMark(42)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (store.isAdmin) "CINEDOR ADMIN" else "MODERATOR",
+                    color = AdminColors.RedBright, fontWeight = FontWeight.Bold, fontSize = 10.5.sp, letterSpacing = 1.6.sp
+                )
+                Text(tab.label, color = AdminColors.Text, fontWeight = FontWeight.Black, fontSize = 22.sp)
+            }
+            TopRoundButton(Icons.Rounded.Refresh, "Reload") { load() }
+            Spacer(Modifier.width(8.dp))
+            TopRoundButton(Icons.Rounded.Logout, "Log out") { confirmLogout = true }
+        }
+
+        }
+        Box(Modifier.align(Alignment.BottomCenter)) { AdminBottomBar(tab, tabs) { tab = it } }
+    }
     }
 
     if (confirmPublish) {
@@ -464,9 +475,7 @@ private fun AdminHome(store: AdminStore, auth: AdminAuth, api: WorkerApi, repo: 
 @Composable
 private fun TopRoundButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     Box(
-        Modifier.size(40.dp).clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.08f))
-            .border(1.dp, AdminColors.Line, CircleShape)
+        Modifier.size(40.dp).glassBubble(CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) { Icon(icon, contentDescription = label, tint = AdminColors.Text, modifier = Modifier.size(19.dp)) }
@@ -512,6 +521,8 @@ private fun DashboardScreen(store: AdminStore, api: WorkerApi, cs: ConfigState, 
                     drawCircle(Color.White.copy(alpha = 0.10f), radius = size.height * 0.75f, center = androidx.compose.ui.geometry.Offset(size.width * 0.95f, size.height * 0.05f))
                     drawCircle(Color.White.copy(alpha = 0.07f), radius = size.height * 0.45f, center = androidx.compose.ui.geometry.Offset(size.width * 0.75f, size.height * 1.05f))
                 }
+                .glassSheen(1.2f)
+                .glassRim(RoundedCornerShape(30.dp), 0.8f)
                 .padding(22.dp)
         ) {
             Column {

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.cinedor.admin.AdminScreenshotTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-11-27T10:26:26.438Z" hostname="vm" time="7.895">
+<testsuite name="com.cinedor.admin.AdminScreenshotTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-11-27T10:29:39.256Z" hostname="vm" time="8.344">
   <properties/>
-  <testcase name="dashboard" classname="com.cinedor.admin.AdminScreenshotTest" time="7.647"/>
+  <testcase name="login" classname="com.cinedor.admin.AdminScreenshotTest" time="7.977"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

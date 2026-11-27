@@ -28,6 +28,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import android.os.Build
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Shape
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
@@ -42,7 +49,65 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Frosted glass card used across the admin app (light edge on top, soft see-through fill). */
+/** Liquid Glass for the admin app: real blur behind floating bars, shine + edge light everywhere. */
+object AdminGlass {
+    /** The page content the floating bars blur. Set in AdminHome. */
+    val LocalHaze = staticCompositionLocalOf<HazeState?> { null }
+    val realBlur: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+}
+
+/** Thin bright edge light of real glass: bright on top, fading, a little light again at the bottom. */
+fun Modifier.glassRim(shape: Shape, strength: Float = 1f): Modifier = border(
+    width = 1.dp,
+    brush = Brush.linearGradient(
+        listOf(Color.White.copy(alpha = 0.45f * strength), Color.White.copy(alpha = 0.06f * strength), Color.White.copy(alpha = 0.16f * strength))
+    ),
+    shape = shape
+)
+
+/** Glossy reflection across the top part of the glass. */
+fun Modifier.glassSheen(strength: Float = 1f): Modifier = drawBehind {
+    val a = 0.16f * strength
+    drawRect(
+        Brush.verticalGradient(
+            listOf(Color.White.copy(alpha = a), Color.White.copy(alpha = a * 0.25f), Color.Transparent),
+            startY = 0f, endY = size.height * 0.6f
+        )
+    )
+}
+
+/** See-through frosted fill with shine and rim (cards, buttons, fields). */
+fun Modifier.glassBubble(shape: Shape): Modifier = clip(shape)
+    .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.14f), Color.White.copy(alpha = 0.05f))))
+    .glassSheen(0.8f)
+    .glassRim(shape)
+
+/** Selected / main-action glass: the red-violet colour behind glass, with shine and rim. */
+fun Modifier.glassAccent(shape: Shape): Modifier = clip(shape)
+    .background(AdminColors.redBrush)
+    .glassSheen(1.4f)
+    .glassRim(shape, 0.9f)
+
+/** Real blurred glass (Android 12+) over the page, frosted tint on older phones. */
+@Composable
+fun Modifier.liquidGlass(shape: Shape, state: HazeState? = AdminGlass.LocalHaze.current): Modifier {
+    val glass = if (state != null && AdminGlass.realBlur) {
+        clip(shape).hazeEffect(
+            state = state,
+            style = HazeStyle(
+                backgroundColor = AdminColors.Bg,
+                tints = listOf(HazeTint(Color(0x7A171A30))),
+                blurRadius = 24.dp,
+                noiseFactor = 0.05f
+            )
+        )
+    } else {
+        clip(shape).background(Brush.verticalGradient(listOf(Color(0xF21C1F38), Color(0xF20F1122))))
+    }
+    return glass.glassSheen(0.9f).glassRim(shape)
+}
+
+/** Liquid glass card used across the admin app. */
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
@@ -53,9 +118,7 @@ fun GlassCard(
     val shape = RoundedCornerShape(24.dp)
     Column(
         modifier = modifier
-            .clip(shape)
-            .background(Brush.verticalGradient(listOf(Color(0x1FFFFFFF), Color(0x0AFFFFFF))))
-            .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.22f), Color.White.copy(alpha = 0.04f))), shape)
+            .glassBubble(shape)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(padding),
         content = content
@@ -143,8 +206,7 @@ fun PrimaryButton(text: String, modifier: Modifier = Modifier, busy: Boolean = f
         modifier = modifier
             .height(52.dp)
             .shadow(12.dp, RoundedCornerShape(18.dp), ambientColor = AdminColors.Red, spotColor = AdminColors.Red)
-            .clip(RoundedCornerShape(18.dp))
-            .background(AdminColors.redBrush)
+            .glassAccent(RoundedCornerShape(18.dp))
             .clickable(enabled = !busy, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -164,9 +226,7 @@ fun SecondaryButton(text: String, modifier: Modifier = Modifier, icon: ImageVect
     Box(
         modifier = modifier
             .height(52.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(Color.White.copy(alpha = 0.08f))
-            .border(1.dp, AdminColors.Line, RoundedCornerShape(18.dp))
+            .glassBubble(RoundedCornerShape(18.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -184,8 +244,8 @@ fun SecondaryButton(text: String, modifier: Modifier = Modifier, icon: ImageVect
 fun adminFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedBorderColor = AdminColors.Red,
     unfocusedBorderColor = AdminColors.Line,
-    focusedContainerColor = AdminColors.Field,
-    unfocusedContainerColor = AdminColors.Field,
+    focusedContainerColor = Color.White.copy(alpha = 0.10f),
+    unfocusedContainerColor = Color.White.copy(alpha = 0.06f),
     focusedLabelColor = AdminColors.RedBright,
     unfocusedLabelColor = AdminColors.Muted,
     cursorColor = AdminColors.Red,
@@ -252,9 +312,7 @@ fun Chip(text: String, selected: Boolean = false, onClick: () -> Unit) {
         fontSize = 12.5.sp,
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier
-            .clip(CircleShape)
-            .background(if (selected) AdminColors.redBrush else Brush.linearGradient(listOf(AdminColors.Field, AdminColors.Field)))
-            .border(1.dp, if (selected) Color.Transparent else AdminColors.Line, CircleShape)
+            .then(if (selected) Modifier.glassAccent(CircleShape) else Modifier.glassBubble(CircleShape))
             .clickable(onClick = onClick)
             .padding(horizontal = 13.dp, vertical = 8.dp)
     )

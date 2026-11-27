@@ -52,6 +52,7 @@ dependencies {
   testImplementation("junit:junit:4.13.2")
   testImplementation("androidx.test:core:1.6.1")
   implementation(platform(libs.androidx.compose.bom))
+  implementation(libs.haze)
   implementation(libs.androidx.activity.compose)
   implementation(libs.androidx.compose.material.icons.core)
   implementation(libs.androidx.compose.material.icons.extended)
