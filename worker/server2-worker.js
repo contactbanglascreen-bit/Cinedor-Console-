@@ -36,23 +36,58 @@ function isBotCheck(html) {
 }
 
 let lastGoodHost = null;
-async function fetchWorking(path) {
-  const order = lastGoodHost ? [lastGoodHost, ...HOSTS.filter((h) => h !== lastGoodHost)] : HOSTS;
-  const errors = [];
-  for (const host of order) {
+let mirrors = []; // current content addresses found on the official "genuine address" page
+
+async function getPage(url, ref) {
+  const r = await fetch(url, {
+    headers: { "User-Agent": UA, Referer: ref || url, Accept: "text/html,application/xhtml+xml" },
+    redirect: "follow",
+    cf: { cacheTtl: 300, cacheEverything: true },
+  });
+  const html = await r.text();
+  return { ok: r.ok && !isBotCheck(html), status: r.status, html, finalUrl: r.url, botCheck: isBotCheck(html) };
+}
+
+// The official site now only lists the genuine addresses; collect every *.movielinkbd.* link on it.
+async function discoverMirrors() {
+  if (mirrors.length) return mirrors;
+  const found = new Set();
+  for (const host of HOSTS) {
     try {
-      const r = await fetch(host + path, {
-        headers: { "User-Agent": UA, Referer: host + "/", Accept: "text/html,application/xhtml+xml" },
-        redirect: "follow",
-        cf: { cacheTtl: 300, cacheEverything: true },
-      });
-      const html = await r.text();
-      if (r.ok && !isBotCheck(html)) {
-        const finalHost = new URL(r.url).origin;
-        lastGoodHost = host;
-        return { html, host: finalHost };
+      const p = await getPage(host + "/");
+      if (!p.ok) continue;
+      const re = /https?:\/\/([a-z0-9-]+\.)*movielinkbd\.[a-z.]+/gi;
+      for (const m of p.html.match(re) || []) {
+        const origin = new URL(m).origin;
+        if (!HOSTS.includes(origin)) found.add(origin);
       }
-      errors.push(`${host}: ${r.status}${isBotCheck(html) ? " (bot check)" : ""}`);
+      // Some pages put the address only in text, e.g. "tgzhck.movielinkbd.at"
+      for (const m of p.html.match(/\b[a-z0-9-]{3,}\.movielinkbd\.[a-z]{2,}\b/gi) || []) {
+        const origin = "https://" + m.toLowerCase();
+        if (!HOSTS.includes(origin)) found.add(origin);
+      }
+    } catch (e) {}
+  }
+  mirrors = [...found].slice(0, 12);
+  return mirrors;
+}
+
+async function candidateHosts() {
+  const list = [...(await discoverMirrors()), ...HOSTS];
+  return lastGoodHost ? [lastGoodHost, ...list.filter((h) => h !== lastGoodHost)] : list;
+}
+
+// Finds a host whose page for `path` has real content (needContent: has title cards).
+async function fetchWorking(path, needContent = false) {
+  const errors = [];
+  for (const host of await candidateHosts()) {
+    try {
+      const p = await getPage(host + path, host + "/");
+      if (!p.ok) { errors.push(`${host}: ${p.status}${p.botCheck ? " (bot check)" : ""}`); continue; }
+      const finalHost = new URL(p.finalUrl).origin;
+      if (needContent && parseCards(p.html, finalHost).length === 0) { errors.push(`${host}: no titles`); continue; }
+      lastGoodHost = host;
+      return { html: p.html, host: finalHost };
     } catch (e) {
       errors.push(`${host}: ${e.message}`);
     }
@@ -76,16 +111,36 @@ function decode(s) {
 function parseCards(html, host) {
   const items = [];
   const seen = new Set();
-  const parts = html.split(/<div\s+class=["'][^"']*movie-card[^"']*["'][^>]*>/i).slice(1);
-  for (const chunk of parts.slice(0, 60)) {
-    const href = (chunk.match(/href=["']([^"']+)["']/i) || [])[1] || "";
-    const title = decode((chunk.match(/<img[^>]*\b(?:title|alt)=["']([^"']+)["']/i) || [])[1] || "");
-    const img = (chunk.match(/(?:data-src|data-lazy-src|src)=["']([^"']+\.(?:jpe?g|png|webp)[^"']*)["']/i) || [])[1] || "";
-    if (!href || !title) continue;
-    const path = href.startsWith("http") ? new URL(href).pathname + new URL(href).search : href;
-    if (seen.has(path)) continue;
+  const add = (href, title, img) => {
+    title = decode(title);
+    if (!href || !title || title.length < 2) return;
+    if (/^(#|javascript:|mailto:)/i.test(href)) return;
+    let path;
+    try { const u = new URL(href, host); if (!/movielinkbd/i.test(u.hostname) && href.startsWith("http")) return; path = u.pathname + u.search; } catch (e) { return; }
+    if (path === "/" || /\/(search|category|genre|page|tag|login|register|about|contact|dmca|privacy)\b/i.test(path)) return;
+    if (seen.has(path)) return;
     seen.add(path);
     items.push({ title, path, poster: abs(img, host) });
+  };
+  // 1) Cards with class "movie-card"
+  const parts = html.split(/<div\s+class=["'][^"']*movie-card[^"']*["'][^>]*>/i).slice(1);
+  for (const chunk of parts.slice(0, 80)) {
+    add((chunk.match(/href=["']([^"']+)["']/i) || [])[1] || "",
+        (chunk.match(/<img[^>]*\b(?:title|alt)=["']([^"']+)["']/i) || [])[1] || "",
+        (chunk.match(/(?:data-src|data-lazy-src|src)=["']([^"']+\.(?:jpe?g|png|webp)[^"']*)["']/i) || [])[1] || "");
+  }
+  // 2) Any link that wraps a poster image (other site layouts)
+  if (items.length === 0) {
+    const re = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]{0,800}?)<\/a>/gi;
+    let m;
+    while ((m = re.exec(html)) && items.length < 80) {
+      const inner = m[2];
+      const img = (inner.match(/<img[^>]*(?:data-src|data-lazy-src|src)=["']([^"']+)["']/i) || [])[1];
+      if (!img || /logo|icon|avatar|banner-ad|\.svg/i.test(img)) continue;
+      const title = (inner.match(/<img[^>]*\b(?:alt|title)=["']([^"']+)["']/i) || [])[1]
+        || decode(inner.replace(/<[^>]+>/g, " "));
+      add(m[1], title, img);
+    }
   }
   return items;
 }
@@ -179,8 +234,22 @@ export default {
     const url = new URL(request.url);
     try {
       if (url.pathname === "/health") return json({ ok: true });
+      if (url.pathname === "/debug") {
+        // Shows which addresses the worker found and what each one returns.
+        const found = await discoverMirrors();
+        const report = [];
+        for (const h of [...found, ...HOSTS].slice(0, 10)) {
+          try {
+            const p = await getPage(h + "/");
+            report.push({ host: h, status: p.status, botCheck: p.botCheck, titles: parseCards(p.html, h).length,
+              pageTitle: decode((p.html.match(/<title>([^<]*)/i) || [])[1] || "").slice(0, 80),
+              links: [...new Set((p.html.match(/href=["']([^"'#]+)["']/gi) || []).map((x) => x.slice(6, -1)))].slice(0, 15) });
+          } catch (e) { report.push({ host: h, error: e.message }); }
+        }
+        return json({ mirrors: found, report });
+      }
       if (url.pathname === "/home") {
-        const { html, host } = await fetchWorking("/");
+        const { html, host } = await fetchWorking("/", true);
         return json({ items: parseCards(html, host) }, 200, 600);
       }
       if (url.pathname === "/search") {
