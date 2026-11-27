@@ -258,12 +258,80 @@ async function saveConfig(text, env) {
   return cur.ref;
 }
 
+// ---------------- Cinedor Ai (movie finder for app users) ----------------
+// Needs a Workers AI binding named "AI" (Worker > Settings > Bindings > Add > Workers AI).
+// Any signed-in Cinedor app user (anonymous Firebase sign-in) may ask; no admin rights needed.
+const AI_MODELS = ["@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/meta/llama-3.1-8b-instruct-fast"];
+const AI_SYSTEM = `You are "Cinedor Ai", the movie and TV finder inside the Cinedor streaming app.
+People describe something they want to watch, often in Bangla, Banglish or English, sometimes
+vaguely ("the anime where a boy and girl swap bodies", "gopal bhar cartoon", "new hindi action").
+Work out which real titles they mean, or suggest fitting titles if they ask for recommendations.
+
+Answer with ONLY a JSON object, no other text:
+{"reply": "<one or two short friendly sentences in the SAME language the person used>",
+ "titles": ["<official title as listed on IMDb/streaming sites>", ...],
+ "keywords": ["<short search words, e.g. a series name or actor>", ...]}
+
+Rules: up to 6 titles, most likely first; use the common English/original title spelling (for
+Indian, Bangladeshi and Korean titles use the usual romanised name). keywords: up to 3.
+If the message is not about movies, series, anime, cartoons or sports, reply politely that you
+only help find things to watch and give empty lists. Never invent links.`;
+
+function parseAiJson(text) {
+  const s = String(text || "");
+  const a = s.indexOf("{"), b = s.lastIndexOf("}");
+  if (a < 0 || b <= a) return null;
+  try { return JSON.parse(s.slice(a, b + 1)); } catch (e) { return null; }
+}
+
+async function askCinedorAi(body, rawEnv) {
+  if (!rawEnv.AI) throw new Error("Cinedor Ai is not set up yet (Workers AI binding \"AI\" missing)");
+  const history = (Array.isArray(body.messages) ? body.messages : [])
+    .slice(-8)
+    .map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.content || "").slice(0, 600) }))
+    .filter((m) => m.content.trim());
+  if (!history.length) throw new Error("Empty message");
+  let lastErr = null;
+  for (const model of AI_MODELS) {
+    try {
+      const out = await rawEnv.AI.run(model, {
+        messages: [{ role: "system", content: AI_SYSTEM }, ...history],
+        max_tokens: 400,
+        temperature: 0.3,
+      });
+      const text = typeof out === "string" ? out : (out && (out.response ?? out.result?.response)) || "";
+      const parsed = (typeof text === "object" && text) ? text : parseAiJson(text);
+      if (parsed && (parsed.reply || parsed.titles)) {
+        return {
+          reply: String(parsed.reply || "").slice(0, 400),
+          titles: (Array.isArray(parsed.titles) ? parsed.titles : []).map(String).filter(Boolean).slice(0, 6),
+          keywords: (Array.isArray(parsed.keywords) ? parsed.keywords : []).map(String).filter(Boolean).slice(0, 3),
+        };
+      }
+      if (typeof text === "string" && text.trim()) return { reply: text.trim().slice(0, 400), titles: [], keywords: [] };
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error("Cinedor Ai did not answer");
+}
+
 export default {
   async fetch(request, rawEnv) {
     const env = { ...DEFAULTS, ...rawEnv };
     const url = new URL(request.url);
     if (request.method === "OPTIONS") return new Response(null, { headers: cors(env) });
     if (url.pathname === "/health") return json(env, 200, { ok: true });
+    if (url.pathname === "/ai" && request.method === "POST") {
+      try {
+        const auth = request.headers.get("Authorization") || "";
+        await verifyIdToken(auth.replace(/^Bearer\s+/i, ""), env);
+        const answer = await askCinedorAi(await request.json(), rawEnv);
+        return json(env, 200, { ok: true, ...answer });
+      } catch (e) {
+        const msg = String(e?.message || e);
+        const status = /token|signature|expired|issuer|project|signing key/i.test(msg) ? 401 : 400;
+        return json(env, status, { ok: false, error: msg });
+      }
+    }
     try {
       await requireAdmin(request, env, url.pathname === "/send" ? "notify" : "popups");
       if (url.pathname === "/send" && request.method === "POST") {
